@@ -4,7 +4,6 @@ __pycache__/
 *$py.class
 .DS_Store
 Trash/
-out/
 
 # C extensions
 *.so
@@ -132,8 +131,3 @@ dmypy.json
 .pyre/
 
 .idea
-/out/*
-/datasets/*
-/playground
-/exps
-EXP_*
