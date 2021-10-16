@@ -8,7 +8,7 @@
 
 Check the full version of the paper including additional details on the experiments as well as all the proofs of our theoretical results. 
 
-
+Paper: `Democratizing_Machine_Learning___Extended_version.pdf`
 
 ## Experiments preparations
 
