@@ -54,6 +54,10 @@ def plot_std(mean, std, info, unique=None):
 
     # mean[4] = mean1[0]
     # std[4] = std1[0]
+    mean[0] = (mean[0][0], "HgO, $f=0, ar=median$")
+    mean[1] = (mean[1][0], "HgO, $f=10, ar=median$")
+    mean[2] = (mean[2][0], "HgO, $f=25, ar=median$")
+    mean[3] = (mean[3][0], "HgO, $f=39, ar=median$")
 
     for i in range(len(mean)):
         x = range(0, len(mean[i][0]) * EVAL_ROUND, EVAL_ROUND)
@@ -120,7 +124,7 @@ def grads_number():
 
 if __name__ == '__main__':
     # grads_number()
-    file = "EXP_LR_F8028E"
+    file = "F_median_LIE"
     info = {'ylabel': f"Test Accuracy", 'xlabel': "Rounds", 'title': "SmartFed vs. Stochastic Gradient Descent"}
 
     plot_std(f"../out/{file}.p", None, info)

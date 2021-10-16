@@ -2,6 +2,14 @@
 
 ## Resilient Distributed Learning with Heterogeneous Participants
 
+
+
+> Important :information_source:
+
+Check the full version of the paper including additional details on the experiments as well as all the proofs of our theoretical results. 
+
+
+
 ## Experiments preparations
 
 ### Install requirements
@@ -38,8 +46,6 @@ All experiments are conducted on either 50 or 100 workers with $q=80\%$ of them 
 
 
 
-
-
 ## Comparing HgO and SGD
 
 
@@ -66,7 +72,7 @@ config2 = [
 
 - **Output**: Non-IID data (left); IID data (right)
 
-<img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhc5yqjtlj613t0u0wik02.jpg" alt="Screen Shot 2021-10-16 at 11.36.41" style="zoom: 33%;" /><img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhc8actyzj613t0u0ads02.jpg" alt="Screen Shot 2021-10-16 at 11.36.32" style="zoom:33%;" />
+<img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhc5yqjtlj613t0u0wik02.jpg" alt="Screen Shot 2021-10-16 at 11.36.41" width="45%" /><img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhc8actyzj613t0u0ads02.jpg" alt="Screen Shot 2021-10-16 at 11.36.32" width="45%" />
 
 ### B – Number of received gradients in case of SGD and HgO under different values of $\tau$
 
@@ -89,7 +95,7 @@ config2 = [
 ```
 
 - **Output:**
--  <img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhcbft9d1j613t0u0q4u02.jpg" alt="Screen Shot 2021-10-16 at 11.43.32" style="zoom:33%;" />
+-  <img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhcbft9d1j613t0u0q4u02.jpg" alt="Screen Shot 2021-10-16 at 11.43.32" width="45%" />
 
 
 
@@ -118,7 +124,7 @@ config = [
 
   
 
-  <img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhcjhj8v3j613t0u0q6902.jpg" alt="Screen Shot 2021-10-16 at 11.50.09" style="zoom:33%;" /><img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhck422q6j613t0u0n0l02.jpg" alt="Screen Shot 2021-10-16 at 11.50.15" style="zoom:33%;" />
+  <img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhcjhj8v3j613t0u0q6902.jpg" alt="Screen Shot 2021-10-16 at 11.50.09" width="45%" /><img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhck422q6j613t0u0n0l02.jpg" alt="Screen Shot 2021-10-16 at 11.50.15" width="45%" />
 
 
 
@@ -140,7 +146,7 @@ config = [
 
 **Output**: using FOE (left) and LIE (right)
 
-<img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhcmxe4dwj613t0u041c02.jpg" alt="Screen Shot 2021-10-16 at 11.53.56" style="zoom:33%;" /><img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhcn1xmk7j613t0u0gor02.jpg" alt="Screen Shot 2021-10-16 at 11.54.02" style="zoom:33%;" />
+<img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhcmxe4dwj613t0u041c02.jpg" alt="Screen Shot 2021-10-16 at 11.53.56" width="45%" /><img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhcn1xmk7j613t0u0gor02.jpg" alt="Screen Shot 2021-10-16 at 11.54.02" width="45%" />
 
 
 
@@ -160,7 +166,7 @@ config = [
 
 **Output**: 
 
-<img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhcookd8vj613t0u0n0302.jpg" alt="Screen Shot 2021-10-16 at 11.56.13" style="zoom:33%;" />
+<img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhcookd8vj613t0u0n0302.jpg" alt="Screen Shot 2021-10-16 at 11.56.13" width="45%" />
 
 
 
@@ -189,7 +195,7 @@ POWERFUL_DEVICE = 100000
 
 **Output**: 
 
-<img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhcxquj0hj613t0u0tbn02.jpg" alt="Screen Shot 2021-10-16 at 12.02.17" style="zoom:33%;" />
+<img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhcxquj0hj613t0u0tbn02.jpg" alt="Screen Shot 2021-10-16 at 12.02.17" width="45%" />
 
 
 
@@ -241,7 +247,7 @@ config = [
 
 **Output:** Weak workers (left), average workers (middle), powerful workers (right) 
 
-<img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhd3ravcuj613t0u0tce02.jpg" alt="Screen Shot 2021-10-16 at 12.10.16" style="zoom:25%;" /><img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhd3yjkezj613t0u042g02.jpg" alt="Screen Shot 2021-10-16 at 12.10.22" style="zoom:25%;" /><img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhd442qqwj613t0u0aea02.jpg" alt="Screen Shot 2021-10-16 at 12.10.32" style="zoom:25%;" />
+<img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhdpu1gs5j613t0u0wi302.jpg" alt="Screen Shot 2021-10-16 at 12.12.53" width="30%" /><img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhdpkd9adj613t0u0gpr02.jpg" alt="Screen Shot 2021-10-16 at 12.13.02" width="30%" /><img src="https://tva1.sinaimg.cn/large/008i3skNgy1gvhdppvozhj613t0u078502.jpg" alt="Screen Shot 2021-10-16 at 12.13.07" width="30%" />
 
 
 
@@ -249,4 +255,4 @@ config = [
 
 You can use a combination of datasets and models to run more experiments on `HgO`.
 
-End. 
+**End.** 
