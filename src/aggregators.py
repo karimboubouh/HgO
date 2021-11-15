@@ -1,14 +1,19 @@
 import numpy as np
 
-from src.utils import flatten_grads, unflatten_grad
+from src.utils import flatten_grads, unflatten_grad, nantrim_mean, flatten, unflatten, log, elog
 
 
 def aggregate(model, grads, block, gar):
     if model in ['NN', 'DNN', "CNN"]:
         dims = [len(b) for b in block]
+        # dims = [e.shape[-1] for e in grads[0][0]] + [grads[0][0][-1].shape[0]]
         unf = aggregate_vector(flatten_grads(grads), gar)
-
         return unflatten_grad(unf, dims)
+    elif model == "MLR":
+        Ws, Bs = list(zip(*grads))
+        arWs = unflatten(aggregate_vector(flatten(Ws), gar), Ws[0].shape)
+        arBs = unflatten(aggregate_vector(flatten(Bs), gar), Bs[0].shape)
+        return arWs, arBs
     else:
         return aggregate_vector(grads, gar)
 
@@ -22,14 +27,12 @@ def aggregate_dnn(grads, gar="average"):
         raise NotImplementedError()
 
 
-def aggregate_cnn(grads, gar="average"):
-    raise NotImplementedError("aggregate_cnn not implemented yet!")
-
-
 def aggregate_vector(grads, gar):
     if gar == "average":
         return average(grads)
     elif gar == "median":
+        return median(grads)
+    elif gar == "tmean":
         return median(grads)
     elif gar == "aksel":
         return aksel(grads)
@@ -46,12 +49,7 @@ def average(gradients):
     assert len(gradients) > 0, "Empty list of gradient to aggregate"
     # Computation
     if len(gradients) > 1:
-        ar = np.nanmean(gradients, axis=0)
-        # nans = np.isnan(ar).sum()
-        # if nans > 0:
-        #     print(f"AR average got {nans} nan values, skipping update...")
-        #     return None
-        return ar
+        return np.nanmean(gradients, axis=0)
     else:
         return gradients[0]
 
@@ -69,6 +67,18 @@ def median(gradients):
         #     print(f"AR median got {nans} nan values, skipping update...")
         #     return None
         return ar
+    else:
+        return gradients[0]
+
+
+def trim_mean(gradients, percent=0.2):
+    """ Aggregate the gradients using the trim mean aggregation rule."""
+
+    # Assertion
+    assert len(gradients) > 0, "Empty list of gradient to aggregate"
+    # Computation
+    if len(gradients) > 1:
+        return nantrim_mean(percent, gradients, axis=0)
     else:
         return gradients[0]
 
@@ -111,19 +121,19 @@ def krum(gradients, f=0):
     for c in columns:
         c = np.array(c)
         c = c[~np.isnan(c)]
-        nbworkers = len(c)
+        nb_workers = len(c)
         scores = []
-        for i in range(nbworkers - 1):
+        for i in range(nb_workers - 1):
             # sqr_dst = []
             gi = c[i].reshape(-1, 1)
             sqr_dst = np.linalg.norm(gi - c[:-1], axis=0) ** 2
-            # for j in range(nbworkers - 1):
+            # for j in range(nb_workers - 1):
             #     gj = c[j].reshape(-1, 1)
             #     dst = np.linalg.norm(gi - gj) ** 2
             #     # dst = np.sqrt(np.nansum(np.square(gi - gj))) ** 2
             #     sqr_dst.append(dst)
-            if (nbworkers - f - 2) >= 0:
-                indices = list(np.argsort(sqr_dst)[:nbworkers - f - 2])
+            if (nb_workers - f - 2) >= 0:
+                indices = list(np.argsort(sqr_dst)[:nb_workers - f - 2])
             else:
                 # very few coordinates
                 indices = list(np.argsort(sqr_dst))
@@ -136,15 +146,15 @@ def krum(gradients, f=0):
         krum_grad.append(c[correct].item())
 
     # scores = []
-    # for i in range(nbworkers - 1):
+    # for i in range(nb_workers - 1):
     #     sqr_dst = []
     #     gi = gradients[i].reshape(-1, 1)
-    #     for j in range(nbworkers - 1):
+    #     for j in range(nb_workers - 1):
     #         gj = gradients[j].reshape(-1, 1)
     #         # dst = np.linalg.norm(gi - gj) ** 2
     #         dst = np.sqrt(np.nansum(np.square(gi - gj))) ** 2
     #         sqr_dst.append(dst)
-    #     indices = list(np.argsort(sqr_dst)[:nbworkers - f - 2])
+    #     indices = list(np.argsort(sqr_dst)[:nb_workers - f - 2])
     #     sqr_dst = np.array(sqr_dst)
     #     scores.append(np.sum(sqr_dst[indices]))
     # correct = np.argmin(scores)
@@ -154,5 +164,5 @@ def krum(gradients, f=0):
 
 
 if __name__ == '__main__':
-    grds = [[1, 2, 3], [4, 5, 6], [1, 2, 3], [1, 2, 3], [4, 5, 6], [1, 2, 3], [1, 2, 3]]
-    print(krum(grds))
+    list_grads = [[1, 2, 3], [4, 5, 6], [1, 2, 3], [1, 2, 3], [4, 5, 6], [1, 2, 3], [1, 2, 3]]
+    print(krum(list_grads))

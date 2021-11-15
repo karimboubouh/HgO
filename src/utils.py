@@ -3,28 +3,68 @@ import pickle
 import socket
 import time
 from math import ceil
+from rich.console import Console
+from inspect import currentframe, getframeinfo
 
 import numpy as np
 from PIL import Image
+from rich.theme import Theme
+from rich import inspect
+from rich import pretty
 
-from src.config import WEAK_DEVICE, AVERAGE_DEVICE, POWERFUL_DEVICE, LAYER_DIMS_FEMNIST, LAYER_DIMS_MNIST
+from src.config import WEAK_DEVICE, AVERAGE_DEVICE, POWERFUL_DEVICE, LAYER_DIMS_FEMNIST, LAYER_DIMS_MNIST, \
+    MIN_DATA_SAMPLE
+
+
+def log(*args, style="", debug=False, catch=False):
+    pretty.install()
+    if len(args) == 1:
+        text = args[0]
+    else:
+        text = args
+
+    styles = {"success": 'green', "warning": 'yellow', "error": 'bold red', "info": 'blue', "title": 'cyan bold'}
+    console = Console(theme=Theme(styles))
+    if catch:
+        console.print(f":arrow_forward: {text}", style="error")
+        console.print_exception(show_locals=True)
+    elif debug:
+        inspect(text, methods=True)
+    elif style in styles.keys():
+        console.print(f":arrow_forward: {text}", style=style)
+    else:
+        console.print(f"{style}:arrow_forward: {text}")
+
+
+def elog(*args, style="", debug=False, catch=False):
+    frameinfo = getframeinfo(currentframe().f_back)
+    filename = frameinfo.filename.split('/')[-1]
+    linenumber = frameinfo.lineno
+    if len(args) == 1:
+        text = args[0]
+    else:
+        text = args
+    info = 'File: %s, line: %d' % (filename, linenumber)
+    log(f"{text}\n{info}", style=style, debug=debug, catch=catch)
+    exit()
 
 
 def exp_details(args):
-    print('>> Experimental details:')
-    print(f'    Model               : {args.model.upper()}')
-    print(f'    Number of Workers   : {args.workers}')
-    print(f'    Active workers      : {args.q * 100}%')
-    print(f'    Byzantine workers   : {args.f}')
-    print(f'    Number of Rounds    : {args.rounds}')
-    # print(f'    Optimizer           : {args.optimizer}')
-    print(f'    Dataset             : {args.dataset}')
-    print(f'    Local epochs        : {args.epochs}')
-    print(f'    Batch size          : {args.batch_size}')
-    print(f'    Learning rate       : {args.lr}')
-    print(f'    Aggregation rule    : {args.gar}')
-    print(f'    Byzantine attack    : {args.attack}')
-    print(f'    Verbose level       : {args.verbose}')
+    log('Experimental details:', style="title")
+    log(f'Model             : {args.model.upper()}', style="\t")
+    log(f'Number of Workers : {args.workers}', style="\t")
+    log(f'Active workers    : {args.q * 100}%', style="\t")
+    log(f'Byzantine workers : {args.f}', style="\t")
+    log(f'Number of Rounds  : {args.rounds}', style="\t")
+    log(f'Unites of time    : {args.tau}', style="\t")
+    log(f'Dataset           : {args.dataset}', style="\t")
+    log(f'Data distribution : {"IID" if args.iid else "Non-IID"}', style="\t")
+    log(f'Non-IID degree    : {args.iid_degree * 100}%', style="\t")
+    log(f'Batch size        : {args.batch_size}', style="\t")
+    log(f'Block strategy    : {args.block_strategy}', style="\t")
+    log(f'Learning rate     : {args.lr}', style="\t")
+    log(f'Aggregation rule  : {args.gar}', style="\t")
+    log(f'Byzantine attack  : {args.attack}', style="\t")
 
 
 def load_conf():
@@ -36,7 +76,7 @@ def load_conf():
                         help="Use Message Passing (MP) instead of Shared memory (SM) ")
     parser.add_argument('--host', type=str, default="0.0.0.0", help="host IP address")
     parser.add_argument('--port', type=int, default=45000, help="port number")
-    parser.add_argument('--rounds', type=int, default=150, help="number of rounds of training")
+    parser.add_argument('--rounds', type=int, default=300, help="number of rounds of training")
     parser.add_argument('--workers', type=int, default=100, help="number of workers.")
     parser.add_argument('--q', type=float, default=0.8, help='the fraction of workers')
     parser.add_argument('--v', type=int, default=1, help='block consistency')
@@ -46,8 +86,8 @@ def load_conf():
     parser.add_argument('--tau', type=int, default=1, help="server wait time tau")
     parser.add_argument('--batch_size', type=int, default=128, help="batch size")
     parser.add_argument('--dbs', type=str, default="NO", help="Dynamic batch size.")
-    parser.add_argument('--block_strategy', type=str, default="CoordinatesFirst",
-                        help="block selection strategy: CoordinatesFirst, DataFirst, Hybrid")
+    parser.add_argument('--block_strategy', type=str, default="Default",
+                        help="block selection strategy: Default, CoordinatesFirst, DataFirst, Hybrid")
     parser.add_argument('--lr', type=float, default=0.01, help='learning rate')
     parser.add_argument('--dataset', type=str, default='mnist', help="name of dataset")
     parser.add_argument('--iid', type=int, default=1, help="IID or non-IID data")
@@ -57,7 +97,7 @@ def load_conf():
     parser.add_argument('--alpha', type=float, default=0.5, help="alpha: Byzantine ratio α")
     parser.add_argument('--attack', type=str, default="NO",
                         help="Byzantine attacks: FOE: Fall of Empires | LIE: Little Is Enough")
-    parser.add_argument('--verbose', type=int, default=2, help='verbose')
+    parser.add_argument('--debug', type=int, default="1", help='debug, default true')
     parser.add_argument('--seed', type=int, default=0, help='random seed')
 
     return Map(vars(parser.parse_args()))
@@ -104,6 +144,8 @@ def dataset_split(dataset, mask):
     np.random.shuffle(mask)
     data = dataset.data[mask, :]
     targets = dataset.targets[mask]
+    if len(targets) < MIN_DATA_SAMPLE:
+        log(f"Worker has less than minimum recommended samples {len(targets)} < {MIN_DATA_SAMPLE}", style="warning")
     return Map({'data': data, 'targets': targets})
 
 
@@ -127,7 +169,7 @@ def dynamic_batch_size(args):
 
 
 def sigmoid(z):
-    return 1 / (1 + np.exp(-z))
+    return 1. / (1 + np.exp(-z))
 
 
 def sigmoid_prime(z):
@@ -147,7 +189,8 @@ def accuracy(y, predictions):
     predictions = np.around(predictions)
     predictions = predictions.reshape(-1)
     y = y.reshape(-1)
-    return sum(predictions == y) / y.shape[0]
+    # return sum(predictions == y) / y.shape[0]
+    return np.mean((predictions == y))
 
 
 def divide_data(dataset, num_workers):
@@ -217,16 +260,16 @@ def mnist_noniid(dataset, num_workers, degree=1):
     return dict_workers
 
 
-def chunks(l, n):
+def chunks(arr, n):
     if n > 0:
-        np.random.shuffle(l)
-        output = [l[i:i + n] for i in range(0, len(l), n)]
+        np.random.shuffle(arr)
+        output = [arr[i:i + n] for i in range(0, len(arr), n)]
         s = len(output[-1])
         if s < n:
             output[-1].extend(output[-2][s:n])
         return output
     else:
-        return None
+        return [list(range(len(arr)))]
 
 
 def nn_chunks(layers, sizes):
@@ -291,6 +334,12 @@ def percentage(value, base):
     return round((value * 100) / base, 2)
 
 
+def nantrim_mean(percent, arr, axis):
+    n = len(arr)
+    k = int(np.array(n * percent))
+    return np.nanmedian(np.sort(arr)[k:n - k], axis=axis)
+
+
 def flatten_grads(grads):
     flattened = [concat([concat(c) for c in grad]) for grad in grads]
     # print([np.isnan(ff).sum() for ff in flattened])
@@ -313,11 +362,11 @@ def unflatten_grad(grad, dims):
     return [unf_w, unf_b]
 
 
-def split(l, dim):
+def split(arr, dim):
     ind = [0]
     for i, j in dim:
         ind += [(i * j) + ind[-1]]
-    return [l[ind[i]:ind[i + 1]] for i in range(len(ind) - 1)]
+    return [arr[ind[i]:ind[i + 1]] for i in range(len(ind) - 1)]
 
 
 def wait_until(predicate, timeout=1, period=0.05, *args_, **kwargs):
@@ -374,6 +423,8 @@ def model_input(data, args):
             return LAYER_DIMS_FEMNIST
         else:
             return LAYER_DIMS_MNIST
+    elif args.model == "MLR":
+        return data.data.shape[1], data.targets.shape[1]
     else:
         return data.data.shape[1]
 
@@ -386,11 +437,12 @@ def gen_image(arr):
 
 def number_coordinates(W):
     if isinstance(W, np.ndarray):
-        d = W.shape[0]
-        dims = [d]
+        dims = list(W.shape)
+        d = np.prod(W.shape)
     else:
         dims = [layer.T.shape[0] for layer in W] + [W[-1].shape[0]]
-        d = sum(dims)
+        d = np.sum([np.prod(w.shape) for w in W])
+
     return dims, d
 
 
@@ -416,17 +468,92 @@ def b_slice(b, bv, i):
     return filled
 
 
-def fill_array(arr, size=None):
-    if size is None:
-        size = max(map(len, arr))
-    empty = np.array([np.nan] * size).reshape(size, 1)
-    return [np.concatenate((g, empty[:size - len(g)])) for g in arr]
+def fill_array(arr, model_name, size=None):
+    if model_name == "MLR":
+        dws, dbs = zip(*arr)
+        n_out = dbs[0].shape[0]
+        if size is None:
+            size = max(map(len, dws))
+        cw = [np.concatenate((g, np.full((size - len(g), n_out), np.nan))) for g in dws]
+        return cw, dbs
+    else:
+        if size is None:
+            size = max(map(len, arr))
+        empty = np.array([np.nan] * size).reshape(size, 10)
+        return [np.concatenate((g, empty[:size - len(g)])) for g in arr]
 
 
 def dynamic_lambda(workers, dynamic):
     capacity = [float(s) for s in dynamic.split(',')]
-    batches = [int(np.random.normal(WEAK_DEVICE, 20)) for _ in np.arange(ceil(workers * capacity[0]))]
-    batches += [int(np.random.normal(AVERAGE_DEVICE, 100)) for _ in np.arange(ceil(workers * capacity[1]))]
-    batches += [int(np.random.normal(POWERFUL_DEVICE, 500)) for _ in np.arange(ceil(workers * capacity[2]))]
-
+    batches = [int(np.random.normal(WEAK_DEVICE[0], WEAK_DEVICE[1])) for _ in np.arange(ceil(workers * capacity[0]))]
+    batches += [int(np.random.normal(AVERAGE_DEVICE[0], AVERAGE_DEVICE[1])) for _ in
+                np.arange(ceil(workers * capacity[1]))]
+    batches += [int(np.random.normal(POWERFUL_DEVICE[0], POWERFUL_DEVICE[1])) for _ in
+                np.arange(ceil(workers * capacity[2]))]
     return batches
+
+
+def softmax(x, eps=1e-7):
+    # e = np.exp(x)
+    e = np.exp(x - np.max(x))  # prevent overflow
+    if e.ndim == 1:
+        return e / (np.sum(e, axis=0) + eps)
+    else:
+        return e / (np.array([np.sum(e, axis=1)]).T + eps)
+
+
+def flatten(arr):
+    """
+    Flatten an array or list of arrays
+    """
+    if isinstance(arr, np.ndarray):
+        shape = arr.shape
+        arr = [arr]
+    elif isinstance(arr, (list, tuple)):
+        shape = list(map(np.shape, arr))
+    else:
+        elog(f"Array type {type(arr)} is not supported>", style="error")
+    try:
+        _flattened = [f.ravel() for f in arr]
+    except AttributeError:
+        log(arr)
+        elog([f.ravel() for f in arr])
+    # _flattened = np.concatenate()
+    return _flattened
+
+
+def unflatten(arr, shapes):
+    """
+    Unflatten an array using a given shape or list of shapes
+    """
+    if isinstance(shapes, tuple):
+        return arr.reshape(shapes)
+    elif isinstance(shapes, list):
+        parts = np.split(arr, np.cumsum([np.prod(s) for s in shapes]))
+        parts = [p for p in parts if len(p) > 0]
+        return [part.reshape(shapes[i]) for i, part in enumerate(parts)]
+    else:
+        elog(f"shapes type {type(arr)} is not supported>", style="error")
+
+
+def number_grads(grads):
+    size = 0
+    for grad in grads:
+        if isinstance(grad, np.ndarray):
+            size += grad.size
+        else:
+            if isinstance(grad[0], np.ndarray):
+                size += grad.size
+            else:
+                size += sum(g.size for g in grad[0])
+    return size
+
+
+if __name__ == '__main__':
+    data = [np.random.randn(784, 30), np.random.randn(30, 10)]
+    flattened, shape = flatten(data)
+    log(flattened.shape)
+
+    unflattened = unflatten(flattened, shape)
+    log([u.shape for u in unflattened])
+    elog("Done")

@@ -4,11 +4,22 @@
 
 
 
-> Important :information_source:
+> **Important** :information_source:
 
 Check the full version of the paper including additional details on the experiments as well as all the proofs of our theoretical results. 
 
 Paper: `Democratizing_Machine_Learning___Extended_version.pdf`
+
+
+
+> **TODO**
+
+- Include selection strategies in paper
+- Include additional experiments in extended version of the paper
+- Update the section on the android app
+- Update the code of the android app
+
+---
 
 ## Experiments preparations
 

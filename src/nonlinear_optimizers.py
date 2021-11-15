@@ -2,7 +2,7 @@ import time
 
 import numpy as np
 
-from src.utils import sigmoid_prime
+from src.utils import sigmoid_prime, number_coordinates, elog, log
 
 
 class DNNOptimizer(object):
@@ -23,14 +23,11 @@ class DNNOptimizer(object):
         self.grads = []
 
     def optimize(self, y, A, Zs):
-        if self.block is None:
-            dw, db, gtime = self.gradient_descent(y, A, Zs)
-        else:
-            subA = [a[self.block[i], :] for i, a in enumerate(A)]
-            subAZs = [z[self.block[i + 1], :] for i, z in enumerate(Zs)]
-            subW = [w[self.block[i + 1], :][:, self.block[i]] for i, w in enumerate(self.W)]
-            subB = [b[self.block[i + 1], :] for i, b in enumerate(self.b)]
-            dw, db, gtime = self.coordinate_descent(y, subA, subAZs, subW, subB)
+        subA = [a[self.block[i], :] for i, a in enumerate(A)]
+        subAZs = [z[self.block[i + 1], :] for i, z in enumerate(Zs)]
+        subW = [w[self.block[i + 1], :][:, self.block[i]] for i, w in enumerate(self.W)]
+        subB = [b[self.block[i + 1], :] for i, b in enumerate(self.b)]
+        dw, db, gtime = self.coordinate_descent(y, subA, subAZs, subW, subB)
 
         return dw, db, gtime
 

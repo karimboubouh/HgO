@@ -1,44 +1,13 @@
-import time
-
-import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.utils import shuffle
 
-from src.datasets import get_dataset, mnist
+from src.datasets import mnist
 from src.nonlinear_optimizers import DNNOptimizer
-from src.utils import sigmoid, nn_chunks, get_block, Map
+from src.utils import sigmoid, nn_chunks, get_block
 
 
 class DNN(object):
-    """Initialize a Deep Neural Network (DNN) model
-
-    Parameters
-    ---------
-    sizes: list, optional
-        A list of numbers specifying number of neurons in each layer. Not
-        required if pretrained model is used.
-
-    learning_rate: float, optional
-        learning rate for the gradient descent optimization. Defaults to 3.0
-
-    batch_size: int, optional
-        Size of the mini batch of training examples as used by Stochastic
-        Gradient Descent. Denotes after how many examples the weights and biases
-        would be updated. Default size is 10.
-
-    epochs: int, optional
-        Number of Epochs through which Neural Network will be trained. Defaults
-        to 10.
-
-    cost: string, optional
-        The cost function to be used to evaluate by how much our assumptions
-        were deviated. Defaults to `rms`.
-
-    lmbda: float, optional
-        The L1 regularization parameter to generalize the neural network.
-        Default value is 0.0.
-
-    """
+    """Deep Neural Network (DNN) model"""
 
     def __init__(self, layer_dims, epochs=20, lr=3.0, batch_size=64):
         self.num_layers = len(layer_dims)
@@ -160,8 +129,8 @@ if __name__ == '__main__':
 
     X_train, Y_train, X_test, Y_test = mnist(path='../datasets/mnist/', binary=False)
     lr_ = 25
-    for i in range(20):
+    for _ in range(20):
         lr_ = lr_ + 1
         dnn = DNN([784, 30, 10], epochs=5, batch_size=128, lr=lr_)
-        acc = dnn.fit(X_train, Y_train, [128, 10, 10])
+        dnn.fit(X_train, Y_train, [128, 10, 10])
         print(f"for lr={lr_}, acc ={dnn.evaluate(X_test, Y_test)[0]}")

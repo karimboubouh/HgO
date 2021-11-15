@@ -3,7 +3,7 @@ import time
 
 import numpy as np
 
-from src.utils import sigmoid
+from src.utils import sigmoid, elog, log
 
 
 class LROptimizer(object):
@@ -21,12 +21,19 @@ class LROptimizer(object):
         self.grads = []
 
     def optimize(self, y, y_pred, X):
-        if self.block is None:
-            grad, gtime = self.gradient_descent(y, y_pred, X)
-        else:
-            subX = X[:, self.block]
-            grad, gtime = self.coordinate_descent(y, y_pred, subX)
-        return grad, gtime
+        subX = X[:, self.block]
+        m = subX.shape[0]
+        t = time.time()
+        dw = 1 / m * subX.T @ (y_pred - y)
+        gtime = time.time() - t
+        return dw, gtime
+
+        # if self.block is None:
+        #     grad, gtime = self.gradient_descent(y, y_pred, X)
+        # else:
+        #     subX = X[:, self.block]
+        #     grad, gtime = self.coordinate_descent(y, y_pred, subX)
+        # return grad, gtime
 
     def estimate_lr_GD(self, X, y):
         maxi = []
@@ -57,24 +64,54 @@ class LROptimizer(object):
         print(f"MAX == {np.max(maxi)}")
 
     @staticmethod
-    def loss(y, y_pred):
-        return -(1.0 / len(y)) * np.sum(y * np.log(y_pred) + (1.0 - y) * np.log(1.0 - y_pred + 1e-7))
+    def loss(y, y_pred, eps=1e-7):
+        return -(1.0 / len(y)) * np.sum(y * np.log(y_pred + eps) + (1.0 - y) * np.log(1.0 - y_pred + eps))
 
     @staticmethod
     def gradient_descent(y, y_pred, X):
-        t = time.time()
         m = X.shape[0]
+        t = time.time()
         dw = 1 / m * X.T @ (y_pred - y)
         gtime = time.time() - t
         return dw, gtime
 
     @staticmethod
     def coordinate_descent(y, y_pred, X):
-        t = time.time()
         m = X.shape[0]
+        t = time.time()
         dw = 1 / m * X.T @ (y_pred - y)
         gtime = time.time() - t
         return dw, gtime
+
+
+class MLROptimizer(object):
+    """
+    MultiClass Logistic regression optimizer using coordinate descent (CD) and gradient descent (GD)
+
+    Arguments:
+    W -- weights, a numpy array of size (n_x, 1)
+    block -- block of coordinates to update if
+    """
+
+    def __init__(self, W, block=None):
+        self.W = W
+        self.block = block
+        self.grads = []
+
+    def optimize(self, y, y_pred, X):
+        subX = X[:, self.block]
+        m = subX.shape[0]
+        t = time.time()
+        error = y_pred - y
+        dw = subX.T @ error
+        db = np.mean(error, axis=0)
+        gtime = time.time() - t
+        return (dw, db), gtime
+
+    @staticmethod
+    def loss(y, y_pred, eps=1e-7):
+        return - np.mean(np.sum(y * np.log(y_pred + eps) + (1 - y) * np.log(1 - y_pred + eps), axis=1))
+        # return -(1.0 / len(y)) * np.sum(y * np.log(y_pred) + (1.0 - y) * np.log(1.0 - y_pred + 1e-7))
 
 
 class LNOptimizer(object):

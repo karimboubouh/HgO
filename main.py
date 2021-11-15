@@ -1,27 +1,23 @@
-import numpy as np
-
 from src.datasets import get_dataset
 from src.experiments import multi_run
 from src.models import load_model
 from src.network import ParamServer, Worker
-from src.utils import load_conf, wait_until, model_input, exp_details, nn_chunks
+from src.utils import load_conf, wait_until, exp_details, log, elog
 
 if __name__ == '__main__':
-    # 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
     # load experiment configuration
     args = load_conf()
+    args.mp = False
+    args.iid = 1
+    # args.iid_degree = 1
     # np.random.seed(args.seed)
-    # enable or disable message passing
-    # args.mp = False
-    # args.iid = 1
-    # args.niid_degree = 0
     # print experiment details
     exp_details(args)
     # load dataset and initialize user's data masks
     train, test, masks = get_dataset(args)
-    # # load model
-    mod_in = model_input(train, args)
-    model = load_model(mod_in, args)
+    # elog(train.data.shxape)
+    # load model
+    model = load_model(train, args)
     # start server
     server = ParamServer(model, args.workers, args)
     server.start()
@@ -33,15 +29,30 @@ if __name__ == '__main__':
         worker.start()
     # wait for all workers to connect
     wait_until(server.workers_connected)
-    print(">> All workers connected.")
+    log("All workers connected.", style="success")
+
+    # todo count number of coordinates instead of grads
 
     # training configurations
+    """
+        - $C_{weak}      : "1,0,0"
+        - $C_{1}$        : "0.9,0.1,0"
+        - $C_{2}$        : "0.7,0.3,0"
+        - $C_{powerful}$ : "0,0,1"
+    """
+
     config = [
-        {'f': 0, 'gar': "average", 'lr': 3, 'algo': "SGD", 'tau': 1000, 'legend': r"SGD, $\tau=\infty$"},
-        {'f': 0, 'gar': "average", 'lr': 3, 'algo': "SGD", 'tau': 60, 'legend': r"SGD, $\tau=60$"},
-        {'f': 0, 'gar': "average", 'lr': 3, 'algo': "HgO", 'tau': 60, 'legend': r"HgO, $\tau=60$"},
-        {'f': 0, 'gar': "average", 'lr': 3, 'algo': "SGD", 'tau': 1, 'legend': r"SGD, $\tau=1$"},
-        {'f': 0, 'gar': "average", 'lr': 3, 'algo': "HgO", 'tau': 1, 'legend': r"HgO, $\tau=1$"},
+        # {'algo': "SGD", 'f': 0, 'gar': "average", 'lr': 0.01, 'dynamic': "1,0,0", 'legend': "SGD, $C_{weak}$"},
+        # {'algo': "SGD", 'f': 0, 'gar': "average", 'lr': 0.01, 'dynamic': "0.9,0.1,0", 'legend': "SGD, $C_{1}$"},
+        # {'algo': "SGD", 'f': 0, 'gar': "average", 'lr': 0.01, 'dynamic': "0.7,0.3,0", 'legend': "SGD, $C_{2}$"},
+        # {'algo': "SGD", 'f': 0, 'gar': "average", 'lr': 0.01, 'dynamic': "0,0,1", 'legend': "SGD, $C_{powerful}$"},
+        {'algo': "SGD", 'f': 0, 'gar': "average", 'lr': 3, 'dynamic': "0,0,1", 'legend': "SGD, $C_{powerful}$"},
+        {'algo': "HgO", 'f': 0, 'gar': "average", 'lr': 3, 'dynamic': "0,0,1", 'legend': "HgO, $C_{powerful}$"},
+
+        # {'algo': "HgO", 'f': 0, 'gar': "average", 'lr': 0.01, 'dynamic': "1,0,0", 'legend': "HgO, $C_{weak}$"},
+        # {'algo': "HgO", 'f': 0, 'gar': "average", 'lr': 0.01, 'dynamic': "0.9,0.1,0", 'legend': "HgO, $C_{1}$"},
+        # {'algo': "HgO", 'f': 0, 'gar': "average", 'lr': 0.01, 'dynamic': "0.7,0.3,0", 'legend': "HgO, $C_{2}$"},
+        # {'algo': "HgO", 'f': 0, 'gar': "average", 'lr': 0.01, 'dynamic': "0,0,1", 'legend': "HgO, $C_{powerful}$"},
     ]
 
     # run the algorithm for {runs} times.

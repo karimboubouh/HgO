@@ -1,18 +1,20 @@
-import time
-
 import numpy as np
 from sklearn.metrics import r2_score, accuracy_score
 from sklearn.utils import shuffle
+from sklearn.linear_model import LogisticRegression as LRR
 
-from src.datasets import phishing, mnist
+from src.datasets import mnist
 from src.nonlinear_models import DNN
-from src.optimizers import LROptimizer, LNOptimizer, SVMOptimizer
-from src.utils import get_batch, sigmoid, accuracy, chunks
+from src.optimizers import LROptimizer, LNOptimizer, SVMOptimizer, MLROptimizer
+from src.utils import get_batch, sigmoid, accuracy, chunks, model_input, softmax, log, elog, flatten
 
 
-def load_model(n_features, args):
+def load_model(train, args):
+    n_features = model_input(train, args)
     if args.model == 'LR':
         model = LogisticRegression(n_features, lr=args.lr, epochs=args.epochs, batch_size=args.batch_size)
+    elif args.model == 'MLR':
+        model = MLR(n_features, lr=args.lr, epochs=args.epochs, batch_size=args.batch_size)
     elif args.model == 'LN':
         model = LinearRegression(n_features, lr=args.lr, epochs=args.epochs, batch_size=args.batch_size)
     elif args.model == 'RR':
@@ -103,9 +105,11 @@ class LogisticRegression(object):
         return grads, gtime
 
     def get_random_batch(self, X, y):
-        sX, sy = shuffle(X, y)
+        # sX, sy = shuffle(X, y)
+        assert len(X) == len(y)
+        p = np.random.permutation(len(X))
+        sX, sy = X[p], y[p]
         m = X.shape[0]
-
         if m < self.batch_size:
             self.batch_size = m
         nb_batches = (m // self.batch_size)
@@ -138,18 +142,128 @@ class LogisticRegression(object):
         return self
 
 
-class MultiClassLogisticRegression:
+class MLR(object):
+    """
+    Multinomial Logistic Regression
+    """
 
-    def __init__(self, n_iter=500, thres=1e-3, batch_size=64, lr=0.001, verbose=True):
+    def __init__(self, dims, lr=0.01, epochs=200, batch_size=32, debug=True):
+        self.n_in = dims[0]
+        self.n_out = dims[1]
+        self.lr = lr
+        self.epochs = epochs
+        self.batch_size = batch_size
+        self.optimizer = None
+        self.debug = debug
+        self.costs = []
+        self._accuracies = []
+        # self.W = np.random.randn(self.n_in, self.n_out) * 0.01
+        # self.b = np.random.randn(self.n_out) * 0.01
+        self.W = np.zeros((self.n_in, self.n_out))
+        self.b = np.zeros(self.n_out)
+
+    def reset(self):
+        self.W = np.random.randn(self.n_in, self.n_out) * 0.01
+        self.b = np.random.randn(self.n_out) * 0.01
+        self.costs = []
+        self._accuracies = []
+
+    def fit(self, X, y, optimizer=MLROptimizer, L2_reg=0.00):
+        self.costs = []
+        self._accuracies = []
+        BLOCK_SIZE = 32
+        blocks = chunks(list(range(len(self.W))), BLOCK_SIZE)
+        self.optimizer = optimizer(self.W)
+        batches = (X.shape[0] // self.batch_size)
+        batches = int(np.ceil(X.shape[0] / self.batch_size))
+        for i in range(self.epochs + 1):
+            X, y = shuffle(X, y)
+            self.optimizer.block = blocks[np.random.choice(len(blocks), replace=False)]
+            for j in range(batches):
+                batch = get_batch(X, y, self.batch_size, j)
+                features, labels = batch
+                # Foreword step
+                predictions = self.forward(features)
+                # Optimization step
+                self.optimizer.W = self.W
+                (dw, db), gtime = self.optimizer.optimize(labels, predictions, features)
+                # Update step
+                b = self.optimizer.block
+                self.W[b] -= self.lr * dw
+                self.b -= self.lr * db
+                # log(np.sum(self.W))
+                # self.W -= self.lr * dw - self.lr * L2_reg * self.W
+                # self.b -= self.lr * db
+
+            # Evaluation
+            predictions = self.forward(X)
+            cost = self.optimizer.loss(y, predictions)
+            acc = acc = np.mean(np.argmax(predictions, axis=1) == np.argmax(y, axis=1))
+            self.costs.append(cost)
+            self._accuracies.append(acc)
+            if i % 5 == 0 and self.debug:
+                print("Epoch {}, Loss {}, Acc {}".format(i, round(cost, 4), round(acc, 4)))
+
+    def one_epoch(self, X, y, block, si):
+        self.optimizer.W = self.W
+        self.optimizer.block = block
+        self.batch_size = si
+        features, labels = self.get_random_batch(X, y)
+        # Foreword step
+        predictions = self.forward(features)
+        # Optimization step
+        grads, gtime = self.optimizer.optimize(labels, predictions, features)
+
+        return grads, gtime
+
+    def get_random_batch(self, X, y):
+        # sX, sy = shuffle(X, y)
+        assert len(X) == len(y)
+        p = np.random.permutation(len(X))
+        sX, sy = X[p], y[p]
+        m = X.shape[0]
+        if m < self.batch_size:
+            self.batch_size = m
+        nb_batches = (m // self.batch_size)
+        j = np.random.choice(nb_batches, replace=False)
+        return get_batch(sX, sy, self.batch_size, j)
+
+    def forward(self, X):
+        return softmax(np.dot(X, self.W) + self.b)
+
+    def predict(self, X):
+        return softmax(np.dot(X, self.W) + self.b)
+
+    def evaluate(self, X, y):
+        predictions = self.forward(X)
+        cost = self.optimizer.loss(y, predictions)
+        acc = np.mean(np.argmax(predictions, axis=1) == np.argmax(y, axis=1))
+        return cost, acc
+
+    def summary(self, X, y):
+        print("-------------------")
+        print(f"Training for {self.epochs} epochs.")
+        print(f">> Train:\n\tloss: {round(self.costs[-1], 4)}.")
+        print(f"\taccuracy: {round(self._accuracies[-1], 3) * 100}%.")
+        cost, acc = self.evaluate(X, y)
+        print(f">> Test:\n\tloss: {round(cost, 4)}.")
+        print(f"\taccuracy: {round(acc, 3) * 100}%.")
+        return self
+
+
+class MLRR:
+
+    def __init__(self, n_iter=500, thres=1e-3, batch_size=64, lr=0.001, debug=True):
         self.n_iter = n_iter
         self.thres = thres
         self.batch_size = batch_size
         self.lr = lr
-        self.verbose = verbose
+        self.debug = debug
         self.loss = []
         self.classes = []
         self.class_labels = []
         self.weights = None
+        self.probs_ = None
 
     def fit(self, X, y, rand_seed=4):
         np.random.seed(rand_seed)
@@ -171,8 +285,9 @@ class MultiClassLogisticRegression:
             error = y_batch - self.predict_(X_batch)
             update = (self.lr * np.dot(error.T, X_batch))
             self.weights += update
-            if np.abs(update).max() < self.thres: break
-            if i % 100 == 0 and self.verbose:
+            if np.abs(update).max() < self.thres:
+                break
+            if i % 100 == 0 and self.debug:
                 print(' Training Accuracy at {} iterations is {}'.format(i, self.evaluate_(X, y)))
             i += 1
 
@@ -180,20 +295,26 @@ class MultiClassLogisticRegression:
         return self.predict_(self.add_bias(X))
 
     def predict_(self, X):
+        # a = np.dot(self.W.T, X.T)
+        # a = X @ self.W
+
         pre_vals = np.dot(X, self.weights.T).reshape(-1, len(self.classes))
         return self.softmax(pre_vals)
 
-    def softmax(self, z):
+    @staticmethod
+    def softmax(z):
         return np.exp(z) / np.sum(np.exp(z), axis=1).reshape(-1, 1)
 
     def predict_classes(self, X):
         self.probs_ = self.predict(X)
         return np.vectorize(lambda c: self.classes[c])(np.argmax(self.probs_, axis=1))
 
-    def add_bias(self, X):
+    @staticmethod
+    def add_bias(X):
         return np.insert(X, 0, 1, axis=1)
 
-    def get_randon_weights(self, row, col):
+    @staticmethod
+    def get_random_weights(row, col):
         return np.zeros(shape=(row, col))
 
     def one_hot(self, y):
@@ -205,7 +326,8 @@ class MultiClassLogisticRegression:
     def evaluate_(self, X, y):
         return np.mean(np.argmax(self.predict_(X), axis=1) == np.argmax(y, axis=1))
 
-    def cross_entropy(self, y, probs):
+    @staticmethod
+    def cross_entropy(y, probs):
         return -1 * np.mean(y * np.log(probs))
 
 
@@ -262,14 +384,13 @@ class LinearRegression(object):
             self.costs.append(cost)
             # self._accuracies.append(acc)
             if i % 10 == 0 and self.debug:
-                print("Epoch {}, Loss {}, Acc {}".format(i, round(cost, 4), round(acc, 4)))
+                print("Epoch {}, Loss {}".format(i, round(cost, 4)))
 
-    def one_epoch(self, X, y, optimizer, block):
-        self.optimizer = optimizer(self.W, self.lr, block)
-        if self.batch_size > 0:
-            features, labels = self.get_random_batch(X, y)
-        else:
-            features, labels = shuffle(X, y)
+    def one_epoch(self, X, y, block, si):
+        self.optimizer.W = self.W
+        self.optimizer.block = block
+        self.batch_size = si
+        features, labels = self.get_random_batch(X, y)
         # Foreword step
         predictions = self.forward(features)
         # Optimization step
@@ -278,7 +399,9 @@ class LinearRegression(object):
         return grads, gtime
 
     def get_random_batch(self, X, y):
-        sX, sy = shuffle(X, y)
+        # sX, sy = shuffle(X, y)
+        p = np.random.permutation(len(X))
+        sX, sy = X[p], y[p]
         m = X.shape[0]
         if m < self.batch_size:
             self.batch_size = m
@@ -379,7 +502,8 @@ class SVM(object):
         return grads, gtime
 
     def get_random_batch(self, X, y):
-        sX, sy = shuffle(X, y)
+        p = np.random.permutation(len(X))
+        sX, sy = X[p], y[p]
         m = X.shape[0]
         if m < self.batch_size:
             self.batch_size = m
@@ -418,6 +542,7 @@ class RidgeRegression(object):
     def __init__(self, n_features, lr=0.01, epochs=1000, batch_size=128, l2_penality=32, threshold=0.5, debug=True):
         self.lr = lr
         self.epochs = epochs
+        self.batch_size = batch_size
         self.C = 0.5
         self.optimizer = None
         self.threshold = threshold
@@ -458,24 +583,33 @@ class RidgeRegression(object):
 
 
 if __name__ == '__main__':
-    # Best Learning rate for LR is 3/4
-    # Loss for lr=0.01 is: 57.8623 -- b=1
-    # Loss for lr=0.001 is: 56.6784
-
     X_train, Y_train, X_test, Y_test = mnist(path='../datasets/mnist/', binary=False)
-    lr_ = 0
-    for i in range(1):
-        lr_ = lr_ + 0.00001
-        t = time.time()
-        # m = LogisticRegression(X_train.shape[1], lr=lr_, epochs=100, batch_size=32, debug=True)
-        m = MultiClassLogisticRegression(thres=1e-5, lr=lr_)
-        m.fit(X_train, Y_train)
-        print(m.score(X_train, Y_train))
-        print(m.score(X_test, Y_test))
-        # print(f"Loss for lr={m.lr} is: {round(m.costs[-1], 4)}")
-        # print(f"Training done in {time.time() - t} seconds.")
-        # m.summary(X_test, Y_test)
+    md = MLR(dims=(784, 10), lr=0.001, epochs=50)
+    md.fit(X_train, Y_train)
+    md.summary(X_test, Y_test)
+    xt = X_test[120:150]
+    yt = Y_test[120:150]
+    log(np.argmax(yt, axis=1))
+    elog(np.argmax(md.predict(xt), axis=1))
 
+    # Y_train = Y_train.ravel()
+    # clf = LRR(C=50.0 / len(X_train), penalty="l1", solver="saga", tol=0.1)
+    # clf.fit(X_train, Y_train)
+    # sparsity = np.mean(clf.coef_ == 0) * 100
+    # score = clf.score(X_test, Y_test)
+    # print("Sparsity with L1 penalty: %.2f%%" % sparsity)
+    # print("Test score with L1 penalty: %.4f" % score)
+
+    # for i in range(1):
+    #     lr_ = lr_ + 0.00001
+    #     t = time.time()
+    # m = LogisticRegression(X_train.shape[1], lr=lr_, epochs=100, batch_size=32, debug=True)
+    # m.fit(X_train, Y_train)
+    # print(m.score(X_train, Y_train))
+    # print(m.score(X_test, Y_test))
+    # print(f"Loss for lr={m.lr} is: {round(m.costs[-1], 4)}")
+    # print(f"Training done in {time.time() - t} seconds.")
+    # m.summary(X_test, Y_test)
     # lr =
     # lr.fit(X_train, Y_train, lr=0.0001)
     # print(lr.weights.shape)

@@ -14,7 +14,7 @@ from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.preprocessing import LabelEncoder, normalize, StandardScaler
 from sklearn.utils import shuffle
 
-from src.utils import divide_data, Map, mnist_noniid
+from src.utils import divide_data, Map, mnist_noniid, log
 
 
 def get_dataset(args):
@@ -69,8 +69,12 @@ def get_dataset(args):
         #     gen_image(test.data[j]).show()
         # exit()
     elif args.dataset == 'mnist':
-        binary = False if args.model in ['DNN', 'CNN'] else True
-        X_train, Y_train, X_test, Y_test = mnist(binary=binary)
+        if args.model == "DNN":
+            X_train, Y_train, X_test, Y_test = mnist(binary=False, encd=False)
+        elif args.model == "MLR":
+            X_train, Y_train, X_test, Y_test = mnist(binary=False, encd=True)
+        else:
+            X_train, Y_train, X_test, Y_test = mnist(binary=True, encd=False)
         train = Map({'data': X_train, 'targets': Y_train})
         test = Map({'data': X_test, 'targets': Y_test})
         if args.iid == 1:
@@ -114,7 +118,8 @@ def get_wine_binary():
 
 
 def wine():
-    data = np.loadtxt('./datasets/wine.data', delimiter=',')
+    data = np.loadtxt('./datasets/wine/'
+                      'wine.data', delimiter=',')
     X, y = data[:, 1:], data[:, 0]
     # transform problem into binary classification task
     idxs = [i for i in range(len(y)) if y[i] == 1 or y[i] == 2]
@@ -150,7 +155,6 @@ def load_adult(path="'./data/adult.csv'"):
 def get_adult(path="'./data/adult.csv'"):
     data = pd.read_csv(path, na_values='?')
     print(data.head())
-    exit()
     data.dropna()
     # split into data and targets
     last_ix = len(data.columns) - 1
@@ -413,7 +417,7 @@ def msd(path='./datasets/MSD/'):
     return X_train, Y_train, X_test, Y_test
 
 
-def mnist(path='./datasets/mnist/', train_size=60000, binary=True):
+def mnist(path='./datasets/mnist/', train_size=60000, binary=True, encd=False):
     data_path = os.path.join(path, 'mnist.data')
     try:
         open(data_path, 'r')
@@ -447,8 +451,11 @@ def mnist(path='./datasets/mnist/', train_size=60000, binary=True):
         Y_test = Y_test - f1
         Y_test = Y_test.reshape(-1, 1)
     else:
-        Y_train = np.array([np.eye(1, 10, k=int(y)).reshape(10) for y in Y_train])
-        Y_test = np.array([np.eye(1, 10, k=int(y)).reshape(10) for y in Y_test])
+        if encd:
+            log("Using OneHotEncodeing ...", style="info")
+            Y_train = np.array([np.eye(1, 10, k=int(y)).reshape(10) for y in Y_train])
+            Y_test = np.array([np.eye(1, 10, k=int(y)).reshape(10) for y in Y_test])
+        # pass
         # pass
         # X_train, X_test = X_train.T, X_test.T
         # Y_train, Y_test = Y_train.T, Y_test.T
@@ -521,5 +528,5 @@ def femnist(path='./datasets/femnist/'):
 if __name__ == '__main__':
     clients_, train_data_, test_data_ = femnist(path='../datasets/femnist/')
 
-    for i in clients_:
-        print(f"client {i} has {train_data_[i]['y']} data samples\n\n\n")
+    for k in clients_:
+        print(f"client {k} has {train_data_[k]['y']} data samples\n\n\n")

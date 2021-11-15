@@ -14,12 +14,13 @@ from tqdm import tqdm
 
 from src import message
 from src.aggregators import aggregate
-from src.config import SOCK_TIMEOUT, TCP_SOCKET_SERVER_LISTEN, BYZ_ITER, EVAL_ROUND, ACC_TIME, FOE_EPS, LIE_Z, LAPS, \
-    LAPS_GRADS, LAYER_DIMS_MNIST
+from src.config import SOCK_TIMEOUT, TCP_SOCKET_SERVER_LISTEN, BYZ_ITER, EVAL_ROUND, FOE_EPS, LIE_Z, RECV_BUFFER, \
+    ALLOW_DIFF_BATCH_SIZE, BARS_ROUND
 from src.nonlinear_optimizers import DNNOptimizer
-from src.optimizers import LROptimizer, RROptimizer, LNOptimizer, SVMOptimizer
+from src.optimizers import LROptimizer, RROptimizer, LNOptimizer, SVMOptimizer, MLROptimizer
 from src.utils import Map, create_tcp_socket, dataset_split, wait_until, class_name, \
-    flatten_grads, unflatten_grad, number_coordinates, w_slice, b_slice, fill_array
+    flatten_grads, unflatten_grad, number_coordinates, w_slice, b_slice, fill_array, log, elog, flatten, unflatten, \
+    number_grads
 
 
 class ParamServer(Thread):
@@ -43,6 +44,7 @@ class ParamServer(Thread):
         self.gtime = []
         self.history = []
         self.grad_time = []
+        self.ngrads = []
         # default params
         self.params = Map({
             'rounds': args.rounds,
@@ -63,7 +65,7 @@ class ParamServer(Thread):
             self.init_server()
 
     def init_server(self):
-        print(f">> Starting server on ({self.host}:{self.port})")
+        log(f"Starting server on ({self.host}:{self.port})", style="info")
         self.sock = create_tcp_socket()
         self.sock.bind((self.host, self.port))
         self.sock.settimeout(SOCK_TIMEOUT)
@@ -71,7 +73,7 @@ class ParamServer(Thread):
 
     def run(self):
         if self.mp:
-            print(f">> Server waiting for incoming connections ...")
+            log(f"Server waiting for incoming connections ...", style="info")
             while not self.terminate:
                 try:
                     conn, address = self.sock.accept()
@@ -88,7 +90,7 @@ class ParamServer(Thread):
                     print(f"!! {self}: Exception!\n{e}")
                 self.update_status()
 
-            print(f">> {self}: Terminating connections ...")
+            log(f"{self}: Terminating connections ...", style="warning")
             for w in self.workers:
                 w.stop()
             time.sleep(1)
@@ -97,9 +99,9 @@ class ParamServer(Thread):
             self.sock.close()
             print(f"!! {self}: Stopped.")
         else:
-            print(f">> Server constructing the communication map ...")
+            log(f"Server constructing the communication map ...", style="info")
 
-    def start_train(self, args):
+    def start_train(self):
         for worker in self.workers:
             if self.mp:
                 worker.send(message.join_train(self.model))
@@ -129,6 +131,7 @@ class ParamServer(Thread):
         self.grads = []
         self.history = []
         self.grad_time = []
+        self.ngrads = []
 
     def init_byzantine_workers(self):
         if self.params.f > 0:
@@ -140,17 +143,17 @@ class ParamServer(Thread):
             self.byz_indices = []
 
     def train(self, X, y):
-        self.history.append(self.evaluate(X, y))
         t = time.time()
         time_laps = t
-        rounds = tqdm(range(self.params.rounds))
         acc_time = float('-inf')
-        number_grads = 0
+        self.ngrads = []
+        rounds = tqdm(range(self.params.rounds))
+        self.history.append(self.evaluate(X, y))
         for i in rounds:
             self.grads = []
             self.gtime = []
             if np.isnan(self.model.W[0]).any() or np.isnan(self.model.W[0]).any():
-                exit(f"W in round {i} Contains nan!")
+                elog(f"W in round {i} Contains nan!", style="error")
             # Select a portion of q workers that may include byzantine workers
             honest, byzantine = self.active_workers(i)
             # v <-- 1 if BYZ_ITER is not reached yet
@@ -159,18 +162,21 @@ class ParamServer(Thread):
             C = self.get_shuffled_grad_indices()
             self.broadcast(message.start_round(self.model.W, C, self.params.tau), only=self.workers[honest])
             t = time.time()
-            # wait_until(self.grads_received, 1e-4, 1e-4, honest)
+            wait_until(self.grads_received, 1e-4, 1e-4, honest)
             if len(self.grads) < 1:
-                print(f"Round {i}: Server received no gradients in {self.params.tau} unites of time.")
+                elog(f"Round {i}: Server received no gradients in {self.params.tau} unite(s) of time.", style="error")
                 if i % EVAL_ROUND == 0:
                     self.history.append(self.evaluate(X, y))
+                if i % BARS_ROUND == 0:
+                    self.ngrads.append(len(self.grads))
                 continue
-            number_grads += len(self.grads)
+
             # t = round((time.time() - t), 4)
             # print(f">>{self.params.tau} --> took {t}s to receive {len(self.grads)} / {len(honest)} grads.")
             # Byzantine attack
             if self.params.attack != "NO":
                 self.byzantine_attacks(byzantine)
+            # todo review meaning of max time
             self.grad_time.append(np.max(self.gtime))
             # self.grad_time.append(self.gtime)
             grads, block, bv = self.consistent_grads(C)
@@ -178,7 +184,7 @@ class ParamServer(Thread):
             self.take_step(round_grad, block)
             # if self.params.algo == "HgO":
             #     if isinstance(self.model.W, np.ndarray):
-            #         lr_max = 1
+            #         lr_max = 10
             #         self.params.lr = lr_max / bv
             #     else:
             #         lr_max = 2472
@@ -194,6 +200,10 @@ class ParamServer(Thread):
 
             if i % EVAL_ROUND == 0:
                 self.history.append(self.evaluate(X, y))
+                # log(f" Number of grads in round {i} is 0 {len(self.grads)}")
+            # if i % BARS_ROUND == 0:
+            # self.ngrads.append(len(self.grads))
+
             # try:
             #     if acc_time == float('-inf') and self.history[-1][1] >= ACC_TIME:
             #         acc_time = time.time() - t
@@ -201,12 +211,18 @@ class ParamServer(Thread):
             #     acc_time = float('-inf')
 
         t = time.time() - t
-        print(f">> Decentralized training finished in {t:.2f} seconds.")
-        print(f"Number of grads: {number_grads}")
+        log(f"Decentralized training finished in {t:.2f} seconds.", style="success")
+        log(f"Number of grads: {sum(self.ngrads)}", style="info")
 
         return acc_time
 
     def byzantine_attacks(self, byzantine):
+        byz_workers = self.workers[byzantine]
+        if len(byz_workers) > 0:
+            byz_grads = [byz_workers[0].attack()] * len(byz_workers)
+            self.grads.extend(byz_grads)
+
+    def byzantine_attacks_old(self, byzantine):
         byz_grads = []
         for byz in self.workers[byzantine]:
             byz_grads.append(byz.attack())
@@ -217,9 +233,9 @@ class ParamServer(Thread):
 
     def summary(self, train, test):
         cost, acc = self.evaluate(train.data, train.targets)
-        print(f"\033[1m\033[92m>> Train: Loss: {cost:.4f}, Accuracy: {(acc * 100):.2f}%.\033[0m")
+        log(f"Train >> Loss: {cost:.4f}, Accuracy: {(acc * 100):.2f}%.", style="warning")
         cost, acc = self.evaluate(test.data, test.targets)
-        print(f"\033[1m\033[92m>> Test: Loss: {cost:.4f}, Accuracy: {(acc * 100):.2f}%.\033[0m")
+        log(f"Test  >> Loss: {cost:.4f}, Accuracy: {(acc * 100):.2f}%.", style="warning")
         return self
 
     def aggregate(self, grads, block=None):
@@ -228,6 +244,8 @@ class ParamServer(Thread):
             return aggregate(model_name, grads, block, "average")
         elif self.params.GAR == "median":
             return aggregate(model_name, grads, block, "median")
+        elif self.params.GAR == "tmean":
+            return aggregate(model_name, grads, block, "tmean")
         elif self.params.GAR == "aksel":
             return aggregate(model_name, grads, block, "aksel")
         elif self.params.GAR == "krum":
@@ -241,8 +259,8 @@ class ParamServer(Thread):
             return
         if name in ['NN', 'DNN']:
             self._take_step_dnn(grad, block)
-        elif name == "CNN":
-            self._take_step_cnn(grad, block)
+        elif name == "MLR":
+            self._take_step_mlr(grad, block)
         else:
             self._take_step_linear(grad, block)
 
@@ -292,19 +310,17 @@ class ParamServer(Thread):
         return self
 
     def consistent_grads(self, C):
+        model_name = class_name(self.model)
+        # SGD algorithm
         if self.params.algo == "SGD":
-            return self.grads, [np.arange(k) for k in LAYER_DIMS_MNIST], None
-
-        if isinstance(self.model.W, np.ndarray):
-            R = np.flip(np.sort([len(grad) for grad in self.grads]))
-            bv = R[self.params.v - 1]
-            cgrads = [grad[:bv] if len(grad) > bv else grad for grad in self.grads]
-            empty = np.array([np.nan] * bv).reshape(bv, 1)
-            dgrads = [np.concatenate((grad, empty[:bv - len(grad)])) for grad in cgrads]
-            block = C[:bv]
-
-            return dgrads, block, bv
-        else:
+            if model_name == "DNN":
+                return self.grads, C, sum(len(c) for c in C)
+            elif model_name == "MLR":
+                return self.grads, C, len(C)
+            else:
+                return self.grads, C, len(C)
+        # HgO algorithm
+        if model_name == "DNN":
             dws, dbs = zip(*self.grads)
             output_R_w = np.array([dws[0][-1].shape[0]] * len(dws))
             R_w = [np.flip(np.sort([l.shape[1] for l in layer])) for layer in zip(*dws)]
@@ -316,17 +332,27 @@ class ParamServer(Thread):
             cb = [[b_slice(b, bv_b, i) for i, b in enumerate(db)] for db in dbs]
             block = [C[i][:bv] for i, bv in enumerate(bv_w)]
             return list(zip(cw, cb)), block, bv_w
+        elif model_name == "MLR":
+            n_in, n_out = self.model.W.shape
+            dws, dbs = zip(*self.grads)
+            R = np.flip(np.sort([len(grad) for grad in dws]))
+            bv = R[self.params.v - 1]
+            cw = [grad[:bv] if len(grad) > bv else grad for grad in dws]
+            cb = [grad[:bv] if len(grad) > bv else grad for grad in dbs]
+            empty_w = np.array([np.nan] * bv * n_out).reshape(bv, n_out)
+            ew = [np.concatenate((grad, empty_w[:bv - len(grad)])) for grad in cw]
+            block = C[:bv]
+            return list(zip(ew, cb)), block, bv
+        else:
 
-            # w1 --> [10][4][10] --> [1  ,  2,  3,  4] [nan ]
-            #                               .... X 10  [nan ]
-            #                    --> [1  ,  2,  3,  4, [nan ]
+            R = np.flip(np.sort([len(grad) for grad in self.grads]))
+            bv = R[self.params.v - 1]
+            cgrads = [grad[:bv] if len(grad) > bv else grad for grad in self.grads]
+            empty = np.array([np.nan] * bv).reshape(bv, 1)
+            dgrads = [np.concatenate((grad, empty[:bv - len(grad)])) for grad in cgrads]
+            block = C[:bv]
 
-            #                    --> [1  ,  2,  3,  4,   5  ]
-            #                               .... X 8
-            # w2 --> [8][5][10]  --> [nan,nan,nan,nan,  nan ]
-            # w2 --> [8][5][10]  --> [nan,nan,nan,nan,  nan ]
-            #
-            # bv_i ->[10][5][10]
+            return dgrads, block, bv
 
     def get_block(self):
         try:
@@ -357,6 +383,8 @@ class ParamServer(Thread):
     def opt_strategy(self, args):
         if args.model == "LR":
             self.model.optimizer = LROptimizer(self.model.W)
+        if args.model == "MLR":
+            self.model.optimizer = MLROptimizer(self.model.W)
         elif args.model == "LN":
             self.model.optimizer = LNOptimizer(self.model.W)
         elif args.model == "RR":
@@ -412,8 +440,10 @@ class ParamServer(Thread):
             self.model.W = [w - self.params.lr * gw for w, gw in zip(self.model.W, dw)]
             self.model.b = [b - self.params.lr * gb for b, gb in zip(self.model.b, db)]
 
-    def _take_step_cnn(self, grad, block):
-        raise NotImplementedError("_take_step_cnn not implemented yet!")
+    def _take_step_mlr(self, grad, block):
+        dw, db = grad
+        self.model.W[block] -= self.params.lr * dw
+        self.model.b -= self.params.lr * db
 
     # Special methods
     def __repr__(self):
@@ -441,7 +471,7 @@ class WorkerConnection(Thread):
                 buffer = b''
                 while len(buffer) < length:
                     to_read = length - len(buffer)
-                    buffer += self.sock.recv(4096 if to_read > 4096 else to_read)
+                    buffer += self.sock.recv(RECV_BUFFER if to_read > RECV_BUFFER else to_read)
 
                 if buffer:
                     data = pickle.loads(buffer)
@@ -511,7 +541,7 @@ class Worker(Thread):
         self.lamda = 1e3
         self.rho = 0.5
         self.train = mask['train'] if args.dataset == "femnist" else dataset_split(train, mask)
-        # print(f">> {self} has {len(self.train.targets)} classes: {set(np.argmax(self.train.targets, axis=1))}")
+        # log(f"{self}: {len(self.train.targets)} samples with classes: {set(np.argmax(self.train.targets, axis=1))}")
         self.test = mask['test'] if args.dataset == "femnist" else test
         # default params
         self.params = Map({
@@ -543,7 +573,7 @@ class Worker(Thread):
                     buffer = b''
                     while len(buffer) < length:
                         to_read = length - len(buffer)
-                        buffer += self.sock.recv(4096 if to_read > 4096 else to_read)
+                        buffer += self.sock.recv(RECV_BUFFER if to_read > RECV_BUFFER else to_read)
 
                     if buffer:
                         data = pickle.loads(buffer)
@@ -615,24 +645,46 @@ class Worker(Thread):
         # number of coordinates
         dims, d = number_coordinates(self.model.W)
         if self.params.algo == "SGD":
-            if d * self.model.batch_size > tau * self.lamda:
-                return "incapable", None
+            max_si = int((tau * self.lamda) / d)
+            if d * self.model.batch_size <= tau * self.lamda:
+                bi = d
+                si = self.model.batch_size
+            elif max_si > 0 and ALLOW_DIFF_BATCH_SIZE:
+                self.model.batch_size = max_si
+                bi = d
+                si = max_si
             else:
-                return None, self.model.batch_size
-        # get bi, si based block selection strategy
-        if self.params.block_strategy == "CoordinatesFirst":
-            bi, si = self.get_block_coordinates_first(d, tau)
-        elif self.params.block_strategy == "DataFirst":
-            bi, si = self.get_block_data_first(d, tau)
+                return "incapable", None
         else:
-            bi, si = self.get_block_hybrid(d, tau)
+            # get bi, si based block selection strategy
+            if self.params.block_strategy == "Hybrid":
+                bi, si = self.get_block_hybrid(d, tau)
+            elif self.params.block_strategy == "CoordinatesFirst":
+                bi, si = self.get_block_coordinates_first(d, tau)
+            elif self.params.block_strategy == "DataFirst":
+                bi, si = self.get_block_data_first(d, tau)
+            else:
+                bi, si = self.get_block_for_batch(d, tau)
+        # check for small values of si and bi
         if bi < 1 or si < 1:
             return "incapable", None
         # print(f">> Block strategy: {self.params.block_strategy}, bi: {bi}, si: {si}")
         # return a block from C and si data points from training
-        block = self.get_block(C, dims, bi)
+        block = self.get_block(C, dims, d, bi)
 
         return block, si
+
+    def get_block_for_batch(self, d, tau):
+        if self.lamda * tau >= self.model.batch_size:
+            bi = min(int((self.lamda * tau) / self.model.batch_size), d)
+            si = self.model.batch_size
+        elif ALLOW_DIFF_BATCH_SIZE:
+            bi = 1
+            si = int(self.lamda * tau)
+        else:
+            bi = si = -1
+
+        return bi, si
 
     def get_block_coordinates_first(self, d, tau):
         S = len(self.train.data)
@@ -678,15 +730,18 @@ class Worker(Thread):
 
         return bi, si
 
-    def get_block(self, C, dims, bi):
+    def get_block(self, C, dims, d, bi):
         if isinstance(C, np.ndarray):
             # one layer: LN, LR, SVM ...
             return C[:bi]
         else:
             # DNN, CNN ...
+            if bi == d:
+                return [list(C[i][:k]) for i, k in enumerate(dims)]
             bi = bi - dims.pop()
             if bi < len(self.model.W):
-                exit("Number of coordinates too small to train the model")
+                log("Number of coordinates too small to train the model", style="warning")
+                return "incapable"
             probabilities = [dim / sum(dims) for dim in dims]
             block = list(np.random.multinomial(bi, probabilities))
             while 0 in block:
@@ -743,41 +798,57 @@ class Byzantine:
             NotImplementedError()
 
     def fall_of_empires(self, model, eps=FOE_EPS):
-        if model in ['NN', 'DNN', "CNN"]:
+        if model == "DNN":
             grads = flatten_grads(self.knowledge.grads)
-            mean = np.nanmean(grads, axis=0)
+            try:
+                mean = np.nanmean(grads, axis=0)
+            except ValueError:
+                log([g.shape for g in self.knowledge.grads])
+                log([len(g) for g in grads])
+                log(len(grads))
+                elog("End")
             dims = [e.shape[-1] for e in self.knowledge.grads[0][0]] + [self.knowledge.grads[0][0][-1].shape[0]]
             return unflatten_grad(-eps * mean, dims)
+        elif model == "MLR":
+            Ws, Bs = fill_array(self.knowledge.grads, model)
+            arWs = unflatten(-eps * np.nanmean(flatten(Ws), axis=0), Ws[0].shape)
+            arBs = unflatten(-eps * np.nanmean(flatten(Bs), axis=0), Bs[0].shape)
+            return arWs, arBs
         else:
-            grads = fill_array(self.knowledge.grads)
+            grads = fill_array(self.knowledge.grads, model)
             mean = np.nanmean(grads, axis=0)
             if np.isnan(mean).any():
-                print(np.isnan(mean).any())
-                exit("fall_of_empires")
+                elog(np.isnan(mean).any())
             return -eps * mean
 
     def little_is_enough(self, model):
-        if model in ['NN', 'DNN', "CNN"]:
-            grads = flatten_grads(self.knowledge.grads)
-        else:
-            grads = self.knowledge.grads
-        n = len(grads) + self.f
+        n = len(self.knowledge.grads) + self.f
         s = math.floor(n / 2 + 1) - self.f
         if LIE_Z:
             z = LIE_Z
         else:
             z = st.norm.ppf((n - s) / n)
 
-        grads = fill_array(self.knowledge.grads)
-        mean = np.nanmean(grads, axis=0)
-        if np.isnan(mean).any():
-            print(np.isnan(mean).any())
-            exit("fall_of_empires")
-        std = np.std(grads, axis=0)
-        if model in ['NN', 'DNN', "CNN"]:
+        if model == "DNN":
+            grads = flatten_grads(self.knowledge.grads)
+            # grads = fill_array(self.knowledge.grads)
+            mean = np.nanmean(grads, axis=0)
+            std = np.nanstd(grads, axis=0)
             dims = [e.shape[-1] for e in self.knowledge.grads[0][0]] + [self.knowledge.grads[0][0][-1].shape[0]]
             return unflatten_grad(mean + z * std, dims)
+        elif model == "MLR":
+            Ws, Bs = fill_array(self.knowledge.grads, model)
+            mean_w = np.nanmean(flatten(Ws), axis=0)
+            std_w = np.nanstd(flatten(Ws), axis=0)
+            mean_b = np.nanmean(flatten(Bs), axis=0)
+            std_b = np.nanstd(flatten(Bs), axis=0)
+            arWs = unflatten(mean_w + z * std_w, Ws[0].shape)
+            arBs = unflatten(mean_b + z * std_b, Bs[0].shape)
+            return arWs, arBs
         else:
+            grads = fill_array(self.knowledge.grads)
+            mean = np.nanmean(grads, axis=0)
+            std = np.std(grads, axis=0)
             return mean + z * std
 
     def crash_failure(self):
