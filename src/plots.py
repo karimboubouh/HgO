@@ -39,10 +39,15 @@ def plot_many(data, info):
 def plot_std(mean, std, info, unique=None):
     if isinstance(mean, str):
         redo = True
-        mean, std, _ = load(mean)
+        mean, std, bars, xtime = load(mean)
     else:
         redo = False
-        # mean1, std1 = load(f"../out/EXP_DNN_0E90D3.p")
+
+    if not unique:
+        unique = np.random.randint(100, 999)
+    print(f"Saving files with code {unique}...")
+
+    # mean1, std1 = load(f"../out/EXP_DNN_0E90D3.p")
     # plt.style.use('seaborn')
     xlabel = info.get('xlabel', "Rounds")
     ylabel = info.get('ylabel', "Test Accuracy")
@@ -52,13 +57,18 @@ def plot_std(mean, std, info, unique=None):
     line_styles = ['-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', ]
     # markers = ['.', 'o', 'v', '^', '<', '>', 's', 'p', '*', 'h', 'H', '+', 'x', 'D', 'd', '|', '_', 'P', 'X']
 
-    # mean[0] = (mean[0][0], "HgO, $f=0, ar=median$")
+    # mean[0] = (mean[0][0], "HgO, No Attack")
+    # mean[1] = (mean[1][0], "HgO, $ar=average$")
+    # mean[2] = (mean[2][0], "HgO, $ar=median$")
+    # mean[3] = (mean[3][0], "HgO, $ar=krum$")
+    # mean[4] = (mean[4][0], "HgO, $ar=aksel$")
+
 
     for i in range(len(mean)):
         x = range(0, len(mean[i][0]) * EVAL_ROUND, EVAL_ROUND)
         plt.plot(x, mean[i][0], color=colors[i], label=mean[i][1], linestyle=line_styles[i])
         # plt.plot(mean[i][0], color=colors[i], label=mean[i][1], linestyle=line_styles[i], marker=markers[i])
-        plt.fill_between(x, mean[i][0] - std[i]/2, mean[i][0] + std[i]/2, color=colors[i], alpha=.1)
+        plt.fill_between(x, mean[i][0] - std[i] / 2, mean[i][0] + std[i] / 2, color=colors[i], alpha=.1)
 
     plt.rc('legend', fontsize=12)
     plt.xlabel(xlabel, fontsize=13)
@@ -66,12 +76,10 @@ def plot_std(mean, std, info, unique=None):
     plt.ylabel(ylabel, fontsize=13)
     plt.yticks(fontsize=13, )
     loc = 'lower right'  # lower right
-    plt.legend(loc="best", shadow=True)
+    plt.legend(loc="lower right", shadow=True)
     plt.grid(linestyle='dashed')
     # plt.title(title)
-    if not unique:
-        unique = np.random.randint(100, 999)
-    print(f"Saving files with code {unique}...")
+
     if redo:
         plt.savefig(f"../out/EXP_{unique}.pdf")
     else:
@@ -84,9 +92,14 @@ def plot_std_bar(mean, std, bars, info, unique=None):
     # plt.style.use(['dark_background'])
     if isinstance(mean, str):
         redo = True
-        mean, std, bars = load(mean)
+        mean, std, bars, xtime = load(mean)
     else:
         redo = False
+
+    if not unique:
+        unique = np.random.randint(100, 999)
+    print(f"Saving files with code {unique}...")
+
     xlabel = info.get('xlabel', "Rounds")
     ylabel_left = info.get('ylabel_left', "Test Accuracy")
     ylabel_right = info.get('ylabel_right', "Number of Gradients")
@@ -102,7 +115,7 @@ def plot_std_bar(mean, std, bars, info, unique=None):
     xbar = np.arange(0, len(bars[0]) * BARS_ROUND, BARS_ROUND)
     for i in range(len(mean)):
         ax1.plot(x, mean[i][0], color=colors[i], label=mean[i][1], linestyle=line_styles[i])
-        ax1.fill_between(x, mean[i][0] - std[i]/2, mean[i][0] + std[i]/2, color=colors[i], alpha=.2)
+        ax1.fill_between(x, mean[i][0] - std[i] / 2, mean[i][0] + std[i] / 2, color=colors[i], alpha=.2)
     # data for axis 2
     ax2 = ax1.twinx()
     # maxi = np.max(bars) + 0.2 * np.max(bars)
@@ -120,6 +133,49 @@ def plot_std_bar(mean, std, bars, info, unique=None):
     # plt.grid(linestyle='dashed')
     fig.tight_layout()
     # plt.title(title)
+
+    if redo:
+        plt.savefig(f"../out/EXP_{unique}.pdf")
+    else:
+        plt.savefig(f"./out/EXP_{unique}.pdf")
+    plt.show()
+
+
+def plot_std_time(xtime, mean, std, info, max_time=None, unique=None):
+    if isinstance(xtime, str):
+        redo = True
+        mean, std, bars, xtime = load(mean)
+    else:
+        redo = False
+        # mean1, std1 = load(f"../out/EXP_DNN_0E90D3.p")
+    # plt.style.use('seaborn')
+    xlabel = info.get('xlabel', "Wall-Clock Time (s)")
+    ylabel = info.get('ylabel', "Test Accuracy")
+    colors = ['red', 'orange', 'green', 'black', 'aqua', 'blue', 'tan', 'grey', 'navy', 'pink']
+    # max_time = None
+    if max_time:
+        mask = xtime < max_time
+    else:
+        mask = np.full(xtime.shape, True)
+
+    print(max_time)
+    print(mask)
+    print(xtime)
+    print(mean)
+
+    for i in range(len(mean)):
+        plt.plot(xtime[i][mask[i]], mean[i][0][mask[i]], color=colors[i], label=mean[i][1])
+        plt.fill_between(xtime[i][mask[i]], mean[i][0][mask[i]] - std[i][mask[i]] / 1,
+                         mean[i][0][mask[i]] + std[i][mask[i]] / 1, color=colors[i], alpha=.1)
+
+    plt.rc('legend', fontsize=12)
+    plt.xlabel(xlabel, fontsize=13)
+    plt.xticks(fontsize=13, )
+    plt.ylabel(ylabel, fontsize=13)
+    plt.yticks(fontsize=13, )
+    loc = 'lower right'  # lower right
+    plt.legend(loc="best", shadow=True)
+    plt.grid(linestyle='dashed')
     if not unique:
         unique = np.random.randint(100, 999)
     print(f"Saving files with code {unique}...")
@@ -127,6 +183,7 @@ def plot_std_bar(mean, std, bars, info, unique=None):
         plt.savefig(f"../out/EXP_{unique}.pdf")
     else:
         plt.savefig(f"./out/EXP_{unique}.pdf")
+    # plt.savefig(f"./out/EXP_{unique}.png", dpi=300)
     plt.show()
 
 
@@ -182,7 +239,7 @@ if __name__ == '__main__':
     # exit()
 
     # grads_number()
-    file = "EXP_MLR_A8F842"
+    file = "EXP_MLR_5FE063"
     info_ = {'ylabel': f"Test Accuracy", 'xlabel': "Rounds", 'title': "SmartFed vs. Stochastic Gradient Descent"}
 
     # plot_std_bar(f"../out/{file}.p", [], [], {})

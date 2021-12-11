@@ -15,14 +15,14 @@ class DNN(object):
         self.lr = lr
         self.epochs = epochs
         self.optimizer = None
-        self.b = [np.random.randn(y, 1) for y in layer_dims[1:]]
-        self.W = [np.random.randn(y, x) for y, x in zip(layer_dims[1:], layer_dims[:-1])]
+        self.b = [np.random.randn(y, 1) / 100 for y in layer_dims[1:]]
+        self.W = [np.random.randn(y, x) / 100 for y, x in zip(layer_dims[1:], layer_dims[:-1])]
         self._costs = []
         self._accuracies = []
 
     def reset(self):
-        self.b = [np.random.randn(y.shape[0], 1) for y in self.b]
-        self.W = [np.random.randn(x.shape[0], x.shape[1]) for x in self.W]
+        self.b = [np.random.randn(y.shape[0], 1) / 100 for y in self.b]
+        self.W = [np.random.randn(x.shape[0], x.shape[1]) / 100 for x in self.W]
         self._costs = []
         self._accuracies = []
 
@@ -112,13 +112,15 @@ class DNN(object):
     def evaluate(self, X, y, convert=True):
         Xt = X.T
         activations, _ = self.forward(Xt)
+        predictions = activations[-1]
+        cost = self.optimizer.loss(y, predictions)
         y_pred = np.argmax(activations[-1], axis=0)
         if convert:
             acc = np.equal(np.argmax(y, axis=-1), y_pred).mean()
         else:
             acc = np.equal(y, y_pred).mean()
 
-        return acc, acc
+        return cost, acc
 
     def summary(self, X, y):
         pass

@@ -1,6 +1,7 @@
 import json
 import os
 
+import gzip
 import joblib
 import numpy as np
 import pandas as pd
@@ -70,11 +71,24 @@ def get_dataset(args):
         # exit()
     elif args.dataset == 'mnist':
         if args.model == "DNN":
-            X_train, Y_train, X_test, Y_test = mnist(binary=False, encd=False)
+            X_train, Y_train, X_test, Y_test = mnist(binary=False)
         elif args.model == "MLR":
-            X_train, Y_train, X_test, Y_test = mnist(binary=False, encd=True)
+            X_train, Y_train, X_test, Y_test = mnist(binary=False)
         else:
-            X_train, Y_train, X_test, Y_test = mnist(binary=True, encd=False)
+            X_train, Y_train, X_test, Y_test = mnist(binary=True)
+        train = Map({'data': X_train, 'targets': Y_train})
+        test = Map({'data': X_test, 'targets': Y_test})
+        if args.iid == 1:
+            masks = divide_data(X_train, args.workers)
+        else:
+            masks = mnist_noniid(train, args.workers, degree=args.iid_degree)
+    elif args.dataset == 'fashion':
+        if args.model == "DNN":
+            X_train, Y_train, X_test, Y_test = fashion(binary=False)
+        elif args.model == "MLR":
+            X_train, Y_train, X_test, Y_test = fashion(binary=False)
+        else:
+            X_train, Y_train, X_test, Y_test = fashion(binary=True)
         train = Map({'data': X_train, 'targets': Y_train})
         test = Map({'data': X_test, 'targets': Y_test})
         if args.iid == 1:
@@ -82,11 +96,18 @@ def get_dataset(args):
         else:
             masks = mnist_noniid(train, args.workers, degree=args.iid_degree)
     elif args.dataset == 'cifar10':
-        binary = False if args.model in ['DNN', 'CNN'] else True
-        X_train, Y_train, X_test, Y_test = cifar10(binary=binary)
+        if args.model == "DNN":
+            X_train, Y_train, X_test, Y_test = cifar10(binary=False)
+        elif args.model == "MLR":
+            X_train, Y_train, X_test, Y_test = cifar10(binary=False)
+        else:
+            X_train, Y_train, X_test, Y_test = cifar10(binary=True)
         train = Map({'data': X_train, 'targets': Y_train})
         test = Map({'data': X_test, 'targets': Y_test})
-        masks = divide_data(X_train, args.workers)
+        if args.iid == 1:
+            masks = divide_data(X_train, args.workers)
+        else:
+            masks = mnist_noniid(train, args.workers, degree=args.iid_degree)
     else:
         raise NotImplementedError(f"dataset {args.dataset} is not supported.")
 
@@ -417,7 +438,7 @@ def msd(path='./datasets/MSD/'):
     return X_train, Y_train, X_test, Y_test
 
 
-def mnist(path='./datasets/mnist/', train_size=60000, binary=True, encd=False):
+def mnist(path='./datasets/mnist/', train_size=60000, binary=True):
     data_path = os.path.join(path, 'mnist.data')
     try:
         open(data_path, 'r')
@@ -451,14 +472,61 @@ def mnist(path='./datasets/mnist/', train_size=60000, binary=True, encd=False):
         Y_test = Y_test - f1
         Y_test = Y_test.reshape(-1, 1)
     else:
-        if encd:
-            log("Using OneHotEncodeing ...", style="info")
-            Y_train = np.array([np.eye(1, 10, k=int(y)).reshape(10) for y in Y_train])
-            Y_test = np.array([np.eye(1, 10, k=int(y)).reshape(10) for y in Y_test])
+        log("Using OneHotEncodeing ...", style="info")
+        Y_train = np.array([np.eye(1, 10, k=int(y)).reshape(10) for y in Y_train])
+        Y_test = np.array([np.eye(1, 10, k=int(y)).reshape(10) for y in Y_test])
         # pass
         # pass
         # X_train, X_test = X_train.T, X_test.T
         # Y_train, Y_test = Y_train.T, Y_test.T
+
+    # Normalize data
+    X_train = X_train / 255
+    X_test = X_test / 255
+
+    return X_train, Y_train, X_test, Y_test
+
+
+def fashion(path='./datasets/fashion/', train_size=60000, binary=True):
+    """Load Fashion-MNIST data from `path`"""
+    # Load train data
+    labels_path = os.path.join(path, 'train-labels-idx1-ubyte.gz')
+    images_path = os.path.join(path, 'train-images-idx3-ubyte.gz')
+    with gzip.open(labels_path, 'rb') as lbpath:
+        labels = np.frombuffer(lbpath.read(), dtype=np.uint8, offset=8)
+    with gzip.open(images_path, 'rb') as imgpath:
+        images = np.frombuffer(imgpath.read(), dtype=np.uint8, offset=16).reshape(len(labels), 784)
+    X_train, Y_train = images, labels
+    # Load test data
+    labels_path = os.path.join(path, 'test-labels-idx1-ubyte.gz')
+    images_path = os.path.join(path, 'test-images-idx3-ubyte.gz')
+    with gzip.open(labels_path, 'rb') as lbpath:
+        labels = np.frombuffer(lbpath.read(), dtype=np.uint8, offset=8)
+    with gzip.open(images_path, 'rb') as imgpath:
+        images = np.frombuffer(imgpath.read(), dtype=np.uint8, offset=16).reshape(len(labels), 784)
+    X_test, Y_test = images, labels
+
+    if binary:
+        # Extract 0 and 1 from train dataset
+        f1 = 0
+        f2 = 1
+        Y_train = np.squeeze(Y_train)
+        X_train = X_train[np.any([Y_train == f1, Y_train == f2], axis=0)]
+        Y_train = Y_train[np.any([Y_train == f1, Y_train == f2], axis=0)]
+        Y_train = Y_train - f1
+        Y_train = Y_train.reshape(-1, 1)
+
+        # Extract 1 and 2 from train dataset
+        Y_test = np.squeeze(Y_test)
+        X_test = X_test[np.any([Y_test == f1, Y_test == f2], axis=0)]
+        Y_test = Y_test[np.any([Y_test == f1, Y_test == f2], axis=0)]
+
+        Y_test = Y_test - f1
+        Y_test = Y_test.reshape(-1, 1)
+    else:
+        log("Using OneHotEncodeing ...", style="info")
+        Y_train = np.array([np.eye(1, 10, k=int(y)).reshape(10) for y in Y_train])
+        Y_test = np.array([np.eye(1, 10, k=int(y)).reshape(10) for y in Y_test])
 
     # Normalize data
     X_train = X_train / 255
@@ -484,6 +552,9 @@ def cifar10(path='./datasets/cifar/', binary=True):
     mean_image = np.mean(X_train, axis=0)
     X_train -= mean_image
     X_test -= mean_image
+    # Normalize data
+    # X_train = X_train / 255
+    # X_test = X_test / 255
     if binary:
         c1 = classes.index('plane')
         c2 = classes.index('car')
@@ -496,11 +567,9 @@ def cifar10(path='./datasets/cifar/', binary=True):
         Y_train = Y_train.reshape(-1, 1)
         Y_test = Y_test.reshape(-1, 1)
     else:
-        pass
-        # Y_train = np.array([np.eye(1, 10, k=int(y)).reshape(10) for y in Y_train])
-        # Y_test = np.array([np.eye(1, 10, k=int(y)).reshape(10) for y in Y_test])
-        # X_train, X_test = X_train.T, X_test.T
-        # Y_train, Y_test = Y_train.T, Y_test.T
+        log("Using OneHotEncodeing ...", style="info")
+        Y_train = np.array([np.eye(1, 10, k=int(y)).reshape(10) for y in Y_train])
+        Y_test = np.array([np.eye(1, 10, k=int(y)).reshape(10) for y in Y_test])
 
     return X_train, Y_train, X_test, Y_test
 

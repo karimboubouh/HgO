@@ -3,15 +3,16 @@ import uuid
 
 import numpy as np
 
-from src.config import EVAL_ROUND, TRACK_ACC, METRIC
+from src.config import EVAL_ROUND, TRACK_ACC, METRIC, PLOT_GRADS, USE_DIFFERENT_HARDWARE
 from src.network import ParamServer
-from src.plots import plot_std, plot_std_bar
-from src.utils import save, dynamic_lambda, log
+from src.plots import plot_std, plot_std_bar, plot_std_time
+from src.utils import save, dynamic_lambda, log, elog
 
 
 def run(server: ParamServer, workers, train, test, config, args, log_acc="acc", keep=True, debug=True):
     logs = []
     ngrads = []
+    xtimes = []
     tc = []
     tt = []
     for c in config:
@@ -22,6 +23,8 @@ def run(server: ParamServer, workers, train, test, config, args, log_acc="acc", 
         server.params.f = c['f']
         server.params.GAR = c['gar']
         # optional settings
+        if c.get('attack', None):
+            server.params.attack = c['attack']
         if c.get('lr', None):
             server.params.lr = c['lr']
         if c.get('tau', None):
@@ -39,9 +42,9 @@ def run(server: ParamServer, workers, train, test, config, args, log_acc="acc", 
                 worker.params.algo = c['algo']
         if c.get('attack', None):
             server.params.attack = c['attack']
-        if c.get('dynamic', None):
-            d = dynamic_lambda(args.workers, c['dynamic'])
-            log(f"Distribution of the computation power <{c['dynamic']}>")
+        if c.get('c', None):
+            d = dynamic_lambda(args.workers, c['c'])
+            log(f"Distribution of the computation power <{c['c']}>")
             for i, worker in enumerate(workers):
                 worker.lamda = d[i]
         else:
@@ -67,13 +70,14 @@ def run(server: ParamServer, workers, train, test, config, args, log_acc="acc", 
             histo = [loss for loss, acc in server.history]
         logs.append(histo)
         ngrads.append(server.ngrads)
+        xtimes.append(server.x_time)
         grad_time = np.sum(server.grad_time)
         if debug:
             # summary of learning
             server.summary(train, test)
             # for block {c['block']}
             log(f"Time complexity to calculate gradients: {grad_time:.4f} seconds.", style="success")
-            log(f"Time complexity to reach 95% accuracy: {acc_time:.4f} seconds.", style="success")
+            # log(f"Time complexity to reach 95% accuracy: {acc_time:.4f} seconds.", style="success")
 
         print()
         tc.append(grad_time)
@@ -84,16 +88,18 @@ def run(server: ParamServer, workers, train, test, config, args, log_acc="acc", 
     if keep:
         save(f"honest_GD_vs_CD_{args.model}_{uuid.uuid4().hex.upper()[0:6]}", logs)
 
-    return logs, ngrads, tc, tt
+    return logs, ngrads, tc, tt, xtimes
 
 
 def multi_run(server, workers, train, test, config, args, runs=10, keep=True, debug=True, seed=True):
     log(f"Evaluation {TRACK_ACC} data each {EVAL_ROUND} rounds.")
     general_logs = []
     general_grads = []
+    general_xtimes = []
     general_tc = []  # time complexity
     general_tt = []  # time to reach {ACC_TIME} accuracy
     metric = METRIC if METRIC else "loss" if args.model == "LN" else "acc"
+    log(f"Used metric: {metric}", style="info")
     # activate keep in case forgotten
     if runs > 1:
         keep = True
@@ -101,9 +107,11 @@ def multi_run(server, workers, train, test, config, args, runs=10, keep=True, de
     for i in range(runs):
         log(f"********** RUN {i} *************************************************************", style="title")
         seed = args.seed if seed else None
-        logs, grads, tc, tt = run(server, workers, train, test, config, args, log_acc=metric, keep=False, debug=debug)
+        logs, grads, tc, tt, xtimes = run(server, workers, train, test, config, args, log_acc=metric, keep=False,
+                                          debug=debug)
         general_logs.append(logs)
         general_grads.append(grads)
+        general_xtimes.append(xtimes)
         general_tc.append(tc)
         general_tt.append(tt)
     # construct logs for stats and plotting
@@ -113,9 +121,8 @@ def multi_run(server, workers, train, test, config, args, runs=10, keep=True, de
             blocks[i].append(b)
     blocks_mean = [(np.mean(block, axis=0), config[index]["legend"]) for index, block in blocks.items()]
     blocks_std = [(np.std(block, axis=0)) for block in blocks.values()]
-    # blocks_grads = np.mean(general_grads, axis=0).astype(int)
-    # todo rEcOvEr
-    blocks_grads = []
+    blocks_grads = np.mean(general_grads, axis=0).astype(int)
+    blocks_xtimes = np.mean(general_xtimes, axis=0)
     # mean_tc = np.mean(general_tc, axis=0)
     # mean_tt = np.mean(general_tt, axis=0)
     # print("MEAN Time Complexity:")
@@ -129,13 +136,18 @@ def multi_run(server, workers, train, test, config, args, runs=10, keep=True, de
     # save logs
     unique = uuid.uuid4().hex.upper()[0:6]
     if keep:
-        save(f"./out/EXP_{args.model}_{unique}.p", (blocks_mean, blocks_std, blocks_grads))
+        save(f"./out/EXP_{args.model}_{unique}.p", (blocks_mean, blocks_std, blocks_grads, blocks_xtimes))
     # Plot accuracies
     # metric = "Loss" "Loss" if args.model == "LN" else "Accuracy"
     metric = "Loss" if METRIC == "loss" else "Accuracy"
-    # info = {'ylabel_left': f"{TRACK_ACC} {metric}", 'ylabel_right': "N˚ Gradients Coordinates", 'xlabel': "Rounds"}
-    info = {'ylabel': f"{TRACK_ACC} {metric}", 'xlabel': "Rounds"}
-    # plot_std_bar(blocks_mean, blocks_std, blocks_grads, info, unique=unique)
-    plot_std(blocks_mean, blocks_std, info, unique=unique)
+    if PLOT_GRADS:
+        info = {'ylabel_left': f"{TRACK_ACC} {metric}", 'ylabel_right': "N˚ of Received Gradients", 'xlabel': "Rounds"}
+        plot_std_bar(blocks_mean, blocks_std, blocks_grads, info, unique=unique)
+    elif USE_DIFFERENT_HARDWARE:
+        info = {'ylabel': f"{TRACK_ACC} {metric}", 'xlabel': "Wall-Clock Time (s)"}
+        plot_std_time(blocks_xtimes, blocks_mean, blocks_std, info, max_time=args.rounds * 4, unique=unique)
+    else:
+        info = {'ylabel': f"{TRACK_ACC} {metric}", 'xlabel': "Rounds"}
+        plot_std(blocks_mean, blocks_std, info, unique=unique)
 
     return blocks_mean, blocks_std, blocks_grads

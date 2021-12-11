@@ -15,7 +15,6 @@ if __name__ == '__main__':
     exp_details(args)
     # load dataset and initialize user's data masks
     train, test, masks = get_dataset(args)
-    # elog(train.data.shxape)
     # load model
     model = load_model(train, args)
     # start server
@@ -31,10 +30,9 @@ if __name__ == '__main__':
     wait_until(server.workers_connected)
     log("All workers connected.", style="success")
 
-    # todo count number of coordinates instead of grads
-
     # training configurations
     """
+        - default        : "0.3,0.4,0.3"
         - $C_{weak}      : "1,0,0"
         - $C_{1}$        : "0.9,0.1,0"
         - $C_{2}$        : "0.7,0.3,0"
@@ -42,18 +40,16 @@ if __name__ == '__main__':
     """
 
     config = [
-        # {'algo': "SGD", 'f': 0, 'gar': "average", 'lr': 0.01, 'dynamic': "1,0,0", 'legend': "SGD, $C_{weak}$"},
-        # {'algo': "SGD", 'f': 0, 'gar': "average", 'lr': 0.01, 'dynamic': "0.9,0.1,0", 'legend': "SGD, $C_{1}$"},
-        # {'algo': "SGD", 'f': 0, 'gar': "average", 'lr': 0.01, 'dynamic': "0.7,0.3,0", 'legend': "SGD, $C_{2}$"},
-        # {'algo': "SGD", 'f': 0, 'gar': "average", 'lr': 0.01, 'dynamic': "0,0,1", 'legend': "SGD, $C_{powerful}$"},
-        {'algo': "SGD", 'f': 0, 'gar': "average", 'lr': 3, 'dynamic': "0,0,1", 'legend': "SGD, $C_{powerful}$"},
-        {'algo': "HgO", 'f': 0, 'gar': "average", 'lr': 3, 'dynamic': "0,0,1", 'legend': "HgO, $C_{powerful}$"},
+        {'algo': "SGD", 'f': 0, 'gar': "average", 'lr': 0.01, 'c': "1,0,0", 'legend': "SGD, $C_{weak}$"},
+        {'algo': "SGD", 'f': 0, 'gar': "average", 'lr': 0.01, 'c': "0.9,0.1,0", 'legend': "SGD, $C_{1}$"},
+        {'algo': "SGD", 'f': 0, 'gar': "average", 'lr': 0.01, 'c': "0.7,0.3,0", 'legend': "SGD, $C_{2}$"},
+        {'algo': "SGD", 'f': 0, 'gar': "average", 'lr': 0.01, 'c': "0,0,1", 'legend': "SGD, $C_{powerful}$"},
 
-        # {'algo': "HgO", 'f': 0, 'gar': "average", 'lr': 0.01, 'dynamic': "1,0,0", 'legend': "HgO, $C_{weak}$"},
-        # {'algo': "HgO", 'f': 0, 'gar': "average", 'lr': 0.01, 'dynamic': "0.9,0.1,0", 'legend': "HgO, $C_{1}$"},
-        # {'algo': "HgO", 'f': 0, 'gar': "average", 'lr': 0.01, 'dynamic': "0.7,0.3,0", 'legend': "HgO, $C_{2}$"},
-        # {'algo': "HgO", 'f': 0, 'gar': "average", 'lr': 0.01, 'dynamic': "0,0,1", 'legend': "HgO, $C_{powerful}$"},
+        {'algo': "HgO", 'f': 0, 'gar': "average", 'lr': 0.01, 'c': "1,0,0", 'legend': "HgO, $C_{weak}$"},
+        {'algo': "HgO", 'f': 0, 'gar': "average", 'lr': 0.01, 'c': "0.9,0.1,0", 'legend': "HgO, $C_{1}$"},
+        {'algo': "HgO", 'f': 0, 'gar': "average", 'lr': 0.01, 'c': "0.7,0.3,0", 'legend': "HgO, $C_{2}$"},
+        {'algo': "HgO", 'f': 0, 'gar': "average", 'lr': 0.01, 'c': "0,0,1", 'legend': "HgO, $C_{powerful}$"},
     ]
 
     # run the algorithm for {runs} times.
-    multi_run(server, workers, train, test, config, args, debug=True, keep=True, runs=1)
+    multi_run(server, workers, train, test, config, args, debug=True, keep=True, runs=2)

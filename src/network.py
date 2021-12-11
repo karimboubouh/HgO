@@ -15,7 +15,7 @@ from tqdm import tqdm
 from src import message
 from src.aggregators import aggregate
 from src.config import SOCK_TIMEOUT, TCP_SOCKET_SERVER_LISTEN, BYZ_ITER, EVAL_ROUND, FOE_EPS, LIE_Z, RECV_BUFFER, \
-    ALLOW_DIFF_BATCH_SIZE, BARS_ROUND
+    ALLOW_DIFF_BATCH_SIZE, BARS_ROUND, USE_DIFFERENT_HARDWARE
 from src.nonlinear_optimizers import DNNOptimizer
 from src.optimizers import LROptimizer, RROptimizer, LNOptimizer, SVMOptimizer, MLROptimizer
 from src.utils import Map, create_tcp_socket, dataset_split, wait_until, class_name, \
@@ -41,14 +41,17 @@ class ParamServer(Thread):
         self.blocks = None
         self.block_size = None
         self.grads = []
+        self.vg = {}
         self.gtime = []
         self.history = []
         self.grad_time = []
+        self.x_time = []
         self.ngrads = []
         # default params
         self.params = Map({
             'rounds': args.rounds,
             'algo': args.algo,
+            'optimizer': "momentum",
             'q': args.q,
             'v': args.v,
             'lr': args.lr,
@@ -131,6 +134,7 @@ class ParamServer(Thread):
         self.grads = []
         self.history = []
         self.grad_time = []
+        self.x_time = []
         self.ngrads = []
 
     def init_byzantine_workers(self):
@@ -142,13 +146,40 @@ class ParamServer(Thread):
         else:
             self.byz_indices = []
 
+    def init_optimizers(self):
+        if self.params.optimizer == "momentum":
+            self.vg["beta"] = 0.9
+            if isinstance(self.model.W, list):
+                self.vg["w"] = [np.zeros(w.shape) for w in self.model.W]
+                self.vg["b"] = [np.zeros(w.shape) for w in self.model.b]
+            else:
+                self.vg["w"] = np.zeros(self.model.W.shape)
+                self.vg["b"] = np.zeros(self.model.b.shape)
+        elif self.params.optimizer == "adam":
+            self.vg["b1"] = 0.9
+            self.vg["b2"] = 0.999
+            self.vg["a"] = 1e-8
+            if isinstance(self.model.W, list):
+                self.vg["vw"] = [np.zeros(w.shape) for w in self.model.W]
+                self.vg["vb"] = [np.zeros(b.shape) for b in self.model.b]
+                self.vg["sw"] = [np.zeros(w.shape) for w in self.model.W]
+                self.vg["sb"] = [np.zeros(b.shape) for b in self.model.b]
+            else:
+                self.vg["vw"] = np.zeros(self.model.W.shape)
+                self.vg["vb"] = np.zeros(self.model.b.shape)
+                self.vg["sw"] = np.zeros(self.model.W.shape)
+                self.vg["sb"] = np.zeros(self.model.b.shape)
+
     def train(self, X, y):
         t = time.time()
         time_laps = t
         acc_time = float('-inf')
         self.ngrads = []
         rounds = tqdm(range(self.params.rounds))
-        self.history.append(self.evaluate(X, y))
+        if USE_DIFFERENT_HARDWARE:
+            self.history.append(self.evaluate(X, y))
+        self.x_time.append(0)
+        self.init_optimizers()
         for i in rounds:
             self.grads = []
             self.gtime = []
@@ -162,13 +193,15 @@ class ParamServer(Thread):
             C = self.get_shuffled_grad_indices()
             self.broadcast(message.start_round(self.model.W, C, self.params.tau), only=self.workers[honest])
             t = time.time()
-            wait_until(self.grads_received, 1e-4, 1e-4, honest)
+            # TODO restore
+            # wait_until(self.grads_received, 1e-4, 1e-4, honest)
             if len(self.grads) < 1:
-                elog(f"Round {i}: Server received no gradients in {self.params.tau} unite(s) of time.", style="error")
-                if i % EVAL_ROUND == 0:
-                    self.history.append(self.evaluate(X, y))
-                if i % BARS_ROUND == 0:
-                    self.ngrads.append(len(self.grads))
+                log(f"Round {i}: Server received no gradients in {self.params.tau} unite(s) of time.", style="error")
+                if not USE_DIFFERENT_HARDWARE:
+                    if i % EVAL_ROUND == 0:
+                        self.history.append(self.evaluate(X, y))
+                    if i % BARS_ROUND == 0:
+                        self.ngrads.append(len(self.grads))
                 continue
 
             # t = round((time.time() - t), 4)
@@ -176,12 +209,10 @@ class ParamServer(Thread):
             # Byzantine attack
             if self.params.attack != "NO":
                 self.byzantine_attacks(byzantine)
-            # todo review meaning of max time
-            self.grad_time.append(np.max(self.gtime))
             # self.grad_time.append(self.gtime)
-            grads, block, bv = self.consistent_grads(C)
+            grads, block, bv, tblock = self.consistent_grads(C)
             round_grad = self.aggregate(grads, block)
-            self.take_step(round_grad, block)
+            self.take_step(round_grad, block, i)
             # if self.params.algo == "HgO":
             #     if isinstance(self.model.W, np.ndarray):
             #         lr_max = 10
@@ -198,11 +229,21 @@ class ParamServer(Thread):
             #     self.history.append(self.evaluate(X, y))
             #     time_laps = time.time()
 
-            if i % EVAL_ROUND == 0:
-                self.history.append(self.evaluate(X, y))
-                # log(f" Number of grads in round {i} is 0 {len(self.grads)}")
-            # if i % BARS_ROUND == 0:
-            # self.ngrads.append(len(self.grads))
+            if i % BARS_ROUND == 0:
+                self.ngrads.append(len(self.grads))
+
+            if USE_DIFFERENT_HARDWARE:
+                round_time = np.max(self.gtime) + tblock
+                self.grad_time.append(round_time)
+                if i % EVAL_ROUND == 0:
+                    self.history.append(self.evaluate(X, y))
+                    self.x_time.append(self.x_time[-1] + round_time)
+                # if self.x_time[-1] > max_time:
+                #     break
+            else:
+                self.grad_time.append(np.max(self.gtime))
+                if i % EVAL_ROUND == 0:
+                    self.history.append(self.evaluate(X, y))
 
             # try:
             #     if acc_time == float('-inf') and self.history[-1][1] >= ACC_TIME:
@@ -212,7 +253,7 @@ class ParamServer(Thread):
 
         t = time.time() - t
         log(f"Decentralized training finished in {t:.2f} seconds.", style="success")
-        log(f"Number of grads: {sum(self.ngrads)}", style="info")
+        log(f"Number of grads: {np.sum(self.ngrads)}", style="info")
 
         return acc_time
 
@@ -253,11 +294,57 @@ class ParamServer(Thread):
         else:
             raise NotImplementedError()
 
-    def take_step(self, grad, block):
+    def take_step(self, grad, block, i):
         name = class_name(self.model)
         if grad is None:
             return
-        if name in ['NN', 'DNN']:
+        # t = i + 1
+        # dw, db = grad
+        # if self.params.optimizer == "momentum":
+        #     if isinstance(self.vg["w"], list):
+        #         for i in range(len(db)):
+        #             self.vg["w"][i] = self.vg["beta"] * self.vg["w"][i] + (1 - self.vg["beta"]) * dw[i]
+        #             self.vg["b"][i] = self.vg["beta"] * self.vg["b"][i] + (1 - self.vg["beta"]) * db[i]
+        #     else:
+        #         self.vg["w"] = self.vg["beta"] * self.vg["w"] + (1 - self.vg["beta"]) * dw
+        #         self.vg["b"] = self.vg["beta"] * self.vg["b"] + (1 - self.vg["beta"]) * db
+        #     vw = self.vg["w"]
+        #     vb = self.vg["b"]
+        #     grad = (vw, vb)
+        # elif self.params.optimizer == "adam":
+        #     if isinstance(self.vg["vw"], list):
+        #         vw = []
+        #         vb = []
+        #         vw_corrected = []
+        #         vb_corrected = []
+        #         sw_corrected = []
+        #         sb_corrected = []
+        #         for i in range(len(db)):
+        #             self.vg["vw"][i] = self.vg["b1"] * self.vg["vw"][i] + (1 - self.vg["b1"]) * dw[i]
+        #             self.vg["vb"][i] = self.vg["b1"] * self.vg["vb"][i] + (1 - self.vg["b1"]) * db[i]
+        #             vw_corrected.append(self.vg["vw"][i] / (1 - self.vg["b1"] ** t))
+        #             vb_corrected.append(self.vg["vb"][i] / (1 - self.vg["b1"] ** t))
+        #             self.vg["sw"][i] = self.vg["b2"] * self.vg["sw"][i] + (1 - self.vg["b2"]) * np.square(dw[i])
+        #             self.vg["sb"][i] = self.vg["b2"] * self.vg["sb"][i] + (1 - self.vg["b2"]) * np.square(db[i])
+        #             sw_corrected.append(self.vg["sw"][i] / (1 - self.vg["b2"] ** t))
+        #             sb_corrected.append(self.vg["sb"][i] / (1 - self.vg["b2"] ** t))
+        #             vw.append(vw_corrected[i] / (np.sqrt(sw_corrected[i]) + self.vg["a"]))
+        #             vb.append(vb_corrected[i] / (np.sqrt(sb_corrected[i]) + self.vg["a"]))
+        #         grad = (vw, vb)
+        #     else:
+        #         self.vg["vw"] = self.vg["b1"] * self.vg["vw"] + (1 - self.vg["b1"]) * dw
+        #         self.vg["vb"] = self.vg["b1"] * self.vg["vb"] + (1 - self.vg["b1"]) * db
+        #         vw_corrected = self.vg["vw"] / (1 - self.vg["b1"] ** t)
+        #         vb_corrected = self.vg["vb"] / (1 - self.vg["b1"] ** t)
+        #         self.vg["sw"] = self.vg["b2"] * self.vg["sw"] + (1 - self.vg["b2"]) * np.square(dw)
+        #         self.vg["sb"] = self.vg["b2"] * self.vg["sb"] + (1 - self.vg["b2"]) * np.square(db)
+        #         sw_corrected = self.vg["sw"] / (1 - self.vg["b2"] ** t)
+        #         sb_corrected = self.vg["sb"] / (1 - self.vg["b2"] ** t)
+        #         vw = vw_corrected / (np.sqrt(sw_corrected) + self.vg["a"])
+        #         vb = vb_corrected / (np.sqrt(sb_corrected) + self.vg["a"])
+        #         grad = (vw, vb)
+
+        if name == "DNN":
             self._take_step_dnn(grad, block)
         elif name == "MLR":
             self._take_step_mlr(grad, block)
@@ -310,15 +397,16 @@ class ParamServer(Thread):
         return self
 
     def consistent_grads(self, C):
+        t = time.time()
         model_name = class_name(self.model)
         # SGD algorithm
         if self.params.algo == "SGD":
             if model_name == "DNN":
-                return self.grads, C, sum(len(c) for c in C)
+                return self.grads, C, sum(len(c) for c in C), time.time() - t
             elif model_name == "MLR":
-                return self.grads, C, len(C)
+                return self.grads, C, len(C), time.time() - t
             else:
-                return self.grads, C, len(C)
+                return self.grads, C, len(C), time.time() - t
         # HgO algorithm
         if model_name == "DNN":
             dws, dbs = zip(*self.grads)
@@ -331,7 +419,7 @@ class ParamServer(Thread):
             cw = [[w_slice(w, bv_w, i) for i, w in enumerate(dw)] for dw in dws]
             cb = [[b_slice(b, bv_b, i) for i, b in enumerate(db)] for db in dbs]
             block = [C[i][:bv] for i, bv in enumerate(bv_w)]
-            return list(zip(cw, cb)), block, bv_w
+            return list(zip(cw, cb)), block, bv_w, time.time() - t
         elif model_name == "MLR":
             n_in, n_out = self.model.W.shape
             dws, dbs = zip(*self.grads)
@@ -342,9 +430,8 @@ class ParamServer(Thread):
             empty_w = np.array([np.nan] * bv * n_out).reshape(bv, n_out)
             ew = [np.concatenate((grad, empty_w[:bv - len(grad)])) for grad in cw]
             block = C[:bv]
-            return list(zip(ew, cb)), block, bv
+            return list(zip(ew, cb)), block, bv, time.time() - t
         else:
-
             R = np.flip(np.sort([len(grad) for grad in self.grads]))
             bv = R[self.params.v - 1]
             cgrads = [grad[:bv] if len(grad) > bv else grad for grad in self.grads]
@@ -352,7 +439,7 @@ class ParamServer(Thread):
             dgrads = [np.concatenate((grad, empty[:bv - len(grad)])) for grad in cgrads]
             block = C[:bv]
 
-            return dgrads, block, bv
+            return dgrads, block, bv, time.time() - t
 
     def get_block(self):
         try:
@@ -370,7 +457,7 @@ class ParamServer(Thread):
 
     def get_shuffled_grad_indices(self):
         try:
-            if class_name(self.model) in ['DNN', 'CNN']:
+            if class_name(self.model) == "DNN":
                 dims = [layer.T.shape[0] for layer in self.model.W] + [self.model.W[-1].shape[0]]
                 indxs = [np.random.permutation(list(range(dim))) for dim in dims[:-1]]
                 return indxs + [np.arange(dims[-1])]
@@ -428,17 +515,12 @@ class ParamServer(Thread):
             self.model.W[block] = self.model.W[block] - self.params.lr * grad
 
     def _take_step_dnn(self, grad, block):
-        # replace nan values with previous W values
         dw, db = grad
-        if block:
-            for idx, (w, b, gw, gb) in enumerate(zip(self.model.W, self.model.b, dw, db)):
-                gw = np.nan_to_num(gw)
-                w[np.ix_(block[idx + 1], block[idx])] -= self.params.lr * gw
-                gb = np.nan_to_num(gb)
-                b[np.ix_(block[idx + 1])] -= self.params.lr * gb
-        else:
-            self.model.W = [w - self.params.lr * gw for w, gw in zip(self.model.W, dw)]
-            self.model.b = [b - self.params.lr * gb for b, gb in zip(self.model.b, db)]
+        for idx, (w, b, gw, gb) in enumerate(zip(self.model.W, self.model.b, dw, db)):
+            gw = np.nan_to_num(gw)
+            w[np.ix_(block[idx + 1], block[idx])] -= self.params.lr * gw
+            gb = np.nan_to_num(gb)
+            b[np.ix_(block[idx + 1])] -= self.params.lr * gb
 
     def _take_step_mlr(self, grad, block):
         dw, db = grad
@@ -634,11 +716,15 @@ class Worker(Thread):
     def local_train(self, data):
         self.model.W = data['W']
         tau = data['tau']
-        block, si = self.round_complexity(data['C'], tau)
+        block, bi, si = self.round_complexity(data['C'], tau)
         if isinstance(block, str) and block == "incapable":
             self.send(message.train_info(None, None))
             return
         grads, gtime = self.model.one_epoch(self.train.data, self.train.targets, block, si)
+        if USE_DIFFERENT_HARDWARE:
+            # simulate weak hardware
+            _, d = number_coordinates(self.model.W)
+            gtime += bi / self.lamda
         self.send(message.train_info(grads, gtime))
 
     def round_complexity(self, C, tau):
@@ -654,7 +740,7 @@ class Worker(Thread):
                 bi = d
                 si = max_si
             else:
-                return "incapable", None
+                return "incapable", None, None
         else:
             # get bi, si based block selection strategy
             if self.params.block_strategy == "Hybrid":
@@ -667,12 +753,12 @@ class Worker(Thread):
                 bi, si = self.get_block_for_batch(d, tau)
         # check for small values of si and bi
         if bi < 1 or si < 1:
-            return "incapable", None
+            return "incapable", None, None
         # print(f">> Block strategy: {self.params.block_strategy}, bi: {bi}, si: {si}")
         # return a block from C and si data points from training
         block = self.get_block(C, dims, d, bi)
 
-        return block, si
+        return block, bi, si
 
     def get_block_for_batch(self, d, tau):
         if self.lamda * tau >= self.model.batch_size:

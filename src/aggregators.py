@@ -4,7 +4,7 @@ from src.utils import flatten_grads, unflatten_grad, nantrim_mean, flatten, unfl
 
 
 def aggregate(model, grads, block, gar):
-    if model in ['NN', 'DNN', "CNN"]:
+    if model == "DNN":
         dims = [len(b) for b in block]
         # dims = [e.shape[-1] for e in grads[0][0]] + [grads[0][0][-1].shape[0]]
         unf = aggregate_vector(flatten_grads(grads), gar)
@@ -33,7 +33,7 @@ def aggregate_vector(grads, gar):
     elif gar == "median":
         return median(grads)
     elif gar == "tmean":
-        return median(grads)
+        return trim_mean(grads)
     elif gar == "aksel":
         return aksel(grads)
     elif gar == "krum":
@@ -71,10 +71,11 @@ def median(gradients):
         return gradients[0]
 
 
-def trim_mean(gradients, percent=0.2):
+def trim_mean(gradients, percent=0.3):
     """ Aggregate the gradients using the trim mean aggregation rule."""
 
     # Assertion
+
     assert len(gradients) > 0, "Empty list of gradient to aggregate"
     # Computation
     if len(gradients) > 1:

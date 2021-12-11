@@ -157,10 +157,10 @@ class MLR(object):
         self.debug = debug
         self.costs = []
         self._accuracies = []
-        # self.W = np.random.randn(self.n_in, self.n_out) * 0.01
-        # self.b = np.random.randn(self.n_out) * 0.01
-        self.W = np.zeros((self.n_in, self.n_out))
-        self.b = np.zeros(self.n_out)
+        self.W = np.random.randn(self.n_in, self.n_out) * 0.01
+        self.b = np.random.randn(self.n_out) * 0.01
+        # self.W = np.zeros((self.n_in, self.n_out))
+        # self.b = np.zeros(self.n_out)
 
     def reset(self):
         self.W = np.random.randn(self.n_in, self.n_out) * 0.01

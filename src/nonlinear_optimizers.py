@@ -15,10 +15,9 @@ class DNNOptimizer(object):
     block -- block of coordinates to update if
     """
 
-    def __init__(self, W, b, lr=0.01, block=None):
+    def __init__(self, W, b, block=None):
         self.W = W
         self.b = b
-        self.lr = lr
         self.block = block
         self.grads = []
 
@@ -69,3 +68,10 @@ class DNNOptimizer(object):
     def cost_derivative(output_activations, y):
         """Return the vector of partial derivatives for the output activations."""
         return output_activations - y
+
+    def loss(self, y, A):
+        """Cross entropy loss:
+                L(y, ŷ) = −∑ylog(ŷ).
+        """
+        l_sum = np.sum(np.multiply(y.T, np.log(A)))
+        return -(1. / y.shape[0]) * l_sum

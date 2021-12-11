@@ -13,7 +13,7 @@ from rich import inspect
 from rich import pretty
 
 from src.config import WEAK_DEVICE, AVERAGE_DEVICE, POWERFUL_DEVICE, LAYER_DIMS_FEMNIST, LAYER_DIMS_MNIST, \
-    MIN_DATA_SAMPLE
+    MIN_DATA_SAMPLE, LAYER_DIMS_CIFAR10
 
 
 def log(*args, style="", debug=False, catch=False):
@@ -229,7 +229,7 @@ def mnist_noniid(dataset, num_workers, degree=1):
     if not 0 <= degree <= 1:
         exit("!! the degree of non-iidness should be between 0 (IID) and 1 (Strict Non-IID).")
     shared = int(len(dataset.data) * (1 - degree))
-    print(f">> Non-IID distribution: {shared} samples out of {len(dataset.data)} are randomly shared between workers.")
+    log(f"Non-IID distribution: {shared} samples out of {len(dataset.data)} are randomly shared between workers.")
     tosplit = len(dataset.data) - shared
     num_shards, num_imgs = estimate_shards(tosplit, num_workers)
     idx_shard = [i for i in range(num_shards)]
@@ -337,7 +337,8 @@ def percentage(value, base):
 def nantrim_mean(percent, arr, axis):
     n = len(arr)
     k = int(np.array(n * percent))
-    return np.nanmedian(np.sort(arr)[k:n - k], axis=axis)
+
+    return np.nanmean(np.sort(arr)[k:n - k], axis=axis)
 
 
 def flatten_grads(grads):
@@ -418,15 +419,30 @@ def mnist_noniid_____(dataset, num_workers, degree=0):
 
 
 def model_input(data, args):
-    if args.model == "DNN":
-        if args.dataset == "femnist":
-            return LAYER_DIMS_FEMNIST
+    if args.dataset == "mnist":
+        if args.model == "DNN":
+            if args.dataset == "femnist":
+                return LAYER_DIMS_FEMNIST
+            else:
+                return LAYER_DIMS_MNIST
+        elif args.model == "MLR":
+            return data.data.shape[1], data.targets.shape[1]
         else:
+            return data.data.shape[1]
+    elif args.dataset == "cifar10":
+        if args.model == "DNN":
+            return LAYER_DIMS_CIFAR10
+        elif args.model == "MLR":
+            return data.data.shape[1], data.targets.shape[1]
+        else:
+            return data.data.shape[1]
+    elif args.dataset == "fashion":
+        if args.model == "DNN":
             return LAYER_DIMS_MNIST
-    elif args.model == "MLR":
-        return data.data.shape[1], data.targets.shape[1]
-    else:
-        return data.data.shape[1]
+        elif args.model == "MLR":
+            return data.data.shape[1], data.targets.shape[1]
+        else:
+            return data.data.shape[1]
 
 
 def gen_image(arr):
@@ -490,7 +506,9 @@ def dynamic_lambda(workers, dynamic):
                 np.arange(ceil(workers * capacity[1]))]
     batches += [int(np.random.normal(POWERFUL_DEVICE[0], POWERFUL_DEVICE[1])) for _ in
                 np.arange(ceil(workers * capacity[2]))]
-    return batches
+    batches = np.array(batches)
+    batches[batches < 0] = 0
+    return list(batches)
 
 
 def softmax(x, eps=1e-7):
