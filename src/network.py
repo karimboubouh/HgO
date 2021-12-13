@@ -51,7 +51,7 @@ class ParamServer(Thread):
         self.params = Map({
             'rounds': args.rounds,
             'algo': args.algo,
-            'optimizer': "momentum",
+            'optimizer': "sgd",
             'q': args.q,
             'v': args.v,
             'lr': args.lr,
@@ -179,7 +179,8 @@ class ParamServer(Thread):
         if USE_DIFFERENT_HARDWARE:
             self.history.append(self.evaluate(X, y))
         self.x_time.append(0)
-        self.init_optimizers()
+        # activate if you want to use momentum or adam
+        # self.init_optimizers()
         for i in rounds:
             self.grads = []
             self.gtime = []

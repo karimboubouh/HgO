@@ -43,13 +43,11 @@ if __name__ == '__main__':
         {'algo': "SGD", 'f': 0, 'gar': "average", 'lr': 0.01, 'c': "1,0,0", 'legend': "SGD, $C_{weak}$"},
         {'algo': "SGD", 'f': 0, 'gar': "average", 'lr': 0.01, 'c': "0.9,0.1,0", 'legend': "SGD, $C_{1}$"},
         {'algo': "SGD", 'f': 0, 'gar': "average", 'lr': 0.01, 'c': "0.7,0.3,0", 'legend': "SGD, $C_{2}$"},
-        {'algo': "SGD", 'f': 0, 'gar': "average", 'lr': 0.01, 'c': "0,0,1", 'legend': "SGD, $C_{powerful}$"},
 
         {'algo': "HgO", 'f': 0, 'gar': "average", 'lr': 0.01, 'c': "1,0,0", 'legend': "HgO, $C_{weak}$"},
         {'algo': "HgO", 'f': 0, 'gar': "average", 'lr': 0.01, 'c': "0.9,0.1,0", 'legend': "HgO, $C_{1}$"},
         {'algo': "HgO", 'f': 0, 'gar': "average", 'lr': 0.01, 'c': "0.7,0.3,0", 'legend': "HgO, $C_{2}$"},
-        {'algo': "HgO", 'f': 0, 'gar': "average", 'lr': 0.01, 'c': "0,0,1", 'legend': "HgO, $C_{powerful}$"},
     ]
 
     # run the algorithm for {runs} times.
-    multi_run(server, workers, train, test, config, args, debug=True, keep=True, runs=2)
+    multi_run(server, workers, train, test, config, args, debug=True, keep=True, runs=3)

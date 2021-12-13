@@ -22,7 +22,7 @@ LIE_Z = 10
 ONE_DEVICE = 1
 # ===================================== MNIST =================================
 # LR/LN/SVM
-# WEAK_DEVICE = [500, 250]
+# WEAK_DEVICE = [250, 125]
 # AVERAGE_DEVICE = [1000, 500]
 # POWERFUL_DEVICE = [5000, 1000]
 # MLR
@@ -49,7 +49,18 @@ POWERFUL_DEVICE = [50000, 5000]
 # WEAK_DEVICE = 20
 # AVERAGE_DEVICE = 100
 # POWERFUL_DEVICE = 500
-
+# ===================================== Boston/LN =============================
+# WEAK_DEVICE = [10, 0]
+# AVERAGE_DEVICE = [50, 0]
+# POWERFUL_DEVICE = [500, 0]
+# ===================================== Cancer/LR =============================
+# WEAK_DEVICE = [20, 0]
+# AVERAGE_DEVICE = [50, 0]
+# POWERFUL_DEVICE = [500, 0]
+# ===================================== Phishing/SVM =============================
+# WEAK_DEVICE = [50, 0]
+# AVERAGE_DEVICE = [250, 0]
+# POWERFUL_DEVICE = [1000, 0]
 
 LAYER_DIMS_MNIST = [784, 30, 10]
 LAYER_DIMS_CIFAR10 = [3072, 30, 10]

@@ -9,7 +9,7 @@ from numpy import genfromtxt
 from pandas import CategoricalDtype
 from sklearn import preprocessing, datasets
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.datasets import load_boston
+from sklearn.datasets import load_boston, load_breast_cancer
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.preprocessing import LabelEncoder, normalize, StandardScaler
@@ -26,6 +26,11 @@ def get_dataset(args):
         masks = divide_data(X_train, args.workers)
     elif args.dataset == 'boston':
         X_train, Y_train, X_test, Y_test = boston()
+        train = Map({'data': X_train, 'targets': Y_train})
+        test = Map({'data': X_test, 'targets': Y_test})
+        masks = divide_data(X_train, args.workers)
+    elif args.dataset == 'breast_cancer':
+        X_train, Y_train, X_test, Y_test = breast_cancer()
         train = Map({'data': X_train, 'targets': Y_train})
         test = Map({'data': X_test, 'targets': Y_test})
         masks = divide_data(X_train, args.workers)
@@ -401,6 +406,15 @@ def boston(path=None):
     # Y_test = Y_test.reshape(-1, 1)
 
     # return X_train, Y_train, X_test, Y_test
+    return X, Y, X, Y
+
+
+def breast_cancer():
+    data = load_breast_cancer()
+    X, Y = data.data, data.target
+    X = StandardScaler().fit_transform(X)  # for easy convergence
+    X = np.hstack([X, np.ones((X.shape[0], 1))])
+    Y = Y.reshape(-1, 1)
     return X, Y, X, Y
 
 

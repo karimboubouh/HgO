@@ -68,7 +68,7 @@ def plot_std(mean, std, info, unique=None):
         x = range(0, len(mean[i][0]) * EVAL_ROUND, EVAL_ROUND)
         plt.plot(x, mean[i][0], color=colors[i], label=mean[i][1], linestyle=line_styles[i])
         # plt.plot(mean[i][0], color=colors[i], label=mean[i][1], linestyle=line_styles[i], marker=markers[i])
-        plt.fill_between(x, mean[i][0] - std[i] / 2, mean[i][0] + std[i] / 2, color=colors[i], alpha=.1)
+        plt.fill_between(x, mean[i][0] - std[i] / 1, mean[i][0] + std[i] / 1, color=colors[i], alpha=.1)
 
     plt.rc('legend', fontsize=12)
     plt.xlabel(xlabel, fontsize=13)

@@ -443,6 +443,12 @@ def model_input(data, args):
             return data.data.shape[1], data.targets.shape[1]
         else:
             return data.data.shape[1]
+    else:
+        if args.model in ["DNN", "MLR", "CNN"]:
+            return elog(f"Dataset {args.dataset} not configured to work with {args.model}.", style="error")
+        else:
+            return data.data.shape[1]
+
 
 
 def gen_image(arr):
@@ -495,7 +501,8 @@ def fill_array(arr, model_name, size=None):
     else:
         if size is None:
             size = max(map(len, arr))
-        empty = np.array([np.nan] * size).reshape(size, 10)
+        empty = np.array([np.nan] * size).reshape(size, arr[0].shape[1])
+
         return [np.concatenate((g, empty[:size - len(g)])) for g in arr]
 
 

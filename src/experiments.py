@@ -119,6 +119,7 @@ def multi_run(server, workers, train, test, config, args, runs=10, keep=True, de
     for exp in general_logs:
         for i, b in enumerate(exp):
             blocks[i].append(b)
+
     blocks_mean = [(np.mean(block, axis=0), config[index]["legend"]) for index, block in blocks.items()]
     blocks_std = [(np.std(block, axis=0)) for block in blocks.values()]
     blocks_grads = np.mean(general_grads, axis=0).astype(int)
